@@ -1,8 +1,8 @@
-import carla
 import random
 import time
 import numpy as np
 import cv2
+import carla
 
 actor_list = []
 
