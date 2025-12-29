@@ -6,13 +6,11 @@ import carla
 import math
 import os
 from collections import deque
-
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D
 from tensorflow.keras.applications import Xception
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import TensorBoard
-
 import tensorflow as tf
 from threading import Thread
 from tqdm import tqdm
@@ -29,7 +27,6 @@ PREDICTION_BATCH_SIZE = 1
 TRAINING_BATCH_SIZE = MINIBATCH_SIZE // 4
 UPDATE_TARGET_EVERY = 5
 MODEL_NAME = "RL_MODEL"
-MEMORY_FRACTION = 0.8
 MIN_REWARD = -200
 
 EPISODES = 100
@@ -44,7 +41,7 @@ class ModifiedTensorBoard(TensorBoard):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.step = 1
-        self.writer = tf.summary.create_file_writer(self.log_dir)
+        self.writer = tf.summary.create_file_writer(self.log_dir) #one writer
         self._log_write_dir = self.log_dir
 
     def set_model(self, model):
@@ -71,9 +68,9 @@ class CarEnv:
     STEER_AMT = 1.0
     im_width = IM_WIDTH
     im_height = IM_HEIGHT
-    front_camera = None
 
     def __init__(self):
+        self.front_camera = None
         self.client = carla.Client("localhost", 2000)
         self.client.set_timeout(10.0)
         self.world = self.client.get_world()
@@ -84,10 +81,12 @@ class CarEnv:
         self.collision_hist = []
         self.actor_list = []
 
+        #spawning an actor
         self.transform = random.choice(self.world.get_map().get_spawn_points())
         self.vehicle = self.world.spawn_actor(self.model_3, self.transform)
         self.actor_list.append(self.vehicle)
 
+        #adding rgb camera
         self.rgb_cam = self.blueprint_library.find("sensor.camera.rgb")
         self.rgb_cam.set_attribute("image_size_x", f"{self.im_width}")
         self.rgb_cam.set_attribute("image_size_y", f"{self.im_height}")
@@ -101,6 +100,7 @@ class CarEnv:
         self.vehicle.apply_control(carla.VehicleControl(throttle = 0.0, brake = 0.0))
         time.sleep(4)
 
+        #adding collision sensor
         colsensor = self.blueprint_library.find("sensor.other.collision")
         self.colsensor = self.world.spawn_actor(colsensor, transform, attach_to = self.vehicle)
         self.actor_list.append(self.colsensor)
@@ -217,7 +217,7 @@ class DQNAgent:
             self.last_logged_episode = self.tensorboard.step
 
         callbacks_list = [self.tensorboard] if log_this_step else []
-        self.model.fit(np.array(X) / 255.0, np.array(y), batch_size=TRAINING_BATCH_SIZE, verbose=0, shuffle=False, callbacks=callbacks_list)
+        self.model.fit(np.array(X) , np.array(y), batch_size=TRAINING_BATCH_SIZE, verbose=0, shuffle=False, callbacks=callbacks_list)
 
         if log_this_step:
             self.target_update_counter += 1
@@ -233,6 +233,7 @@ class DQNAgent:
         X = np.random.uniform(size = (1, IM_HEIGHT, IM_WIDTH, 3)).astype(np.float32)
         y = np.random.uniform(size = (1, 3)).astype(np.float32)
 
+        #only to "wake-up" model
         self.model.fit(X,y, verbose = False, batch_size = 1)
 
         self.training_initialized = True
