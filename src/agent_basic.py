@@ -20,7 +20,7 @@ IMAGE_WIDTH = 450
 IMAGE_HEIGHT = 250
 FOV = 120
 script_location = Path(__file__).resolve().parent
-output_dir = script_location.parent / 'labels'
+output_dir = script_location.parent / 'data'
 
 def obstacle_detection(vehicle, obstacle_list, dist_threshold = 5.0):
     v_loc = vehicle.get_location()
@@ -143,7 +143,7 @@ def main():
         #CATALOG PREPARATION
         image_dir = output_dir / 'images'
         image_dir.mkdir(parents = True, exist_ok = True)
-        data_dir = output_dir / 'data.csv'
+        data_dir = output_dir / 'annotations.csv'
         csv_file = open(str(data_dir), 'w', newline='')
         writer = csv.writer(csv_file)
         writer.writerow(['image', 'steer', 'throttle', 'brake', 'command', 'speed'])
