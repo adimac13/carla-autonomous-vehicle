@@ -7,17 +7,22 @@ import time
 import cv2
 import numpy as np
 from carla import ColorConverter as cc
+import csv
+from pathlib import Path
 
 CARLA_ROOT = "C:/CARLA_0.9.16/PythonAPI/carla"
 sys.path.append(CARLA_ROOT)
 from agents.navigation.behavior_agent import BehaviorAgent
+from agents.navigation.local_planner import RoadOption
 
 
-IMAGE_WIDTH = 640
-IMAGE_HEIGHT = 480
+IMAGE_WIDTH = 450
+IMAGE_HEIGHT = 250
 FOV = 120
+script_location = Path(__file__).resolve().parent
+output_dir = script_location.parent / 'labels'
 
-def obstacle_detection(vehicle, obstacle_list, dist_threshold = 10.0):
+def obstacle_detection(vehicle, obstacle_list, dist_threshold = 5.0):
     v_loc = vehicle.get_location()
     v_trans = vehicle.get_transform()
     v_fwd = v_trans.get_forward_vector()
@@ -32,10 +37,10 @@ def obstacle_detection(vehicle, obstacle_list, dist_threshold = 10.0):
             vec_to_obs.x /= length
             vec_to_obs.y /= length
 
-            #assuming z is const
+            #ASSUMING Z IS CONST
             dot = v_fwd.x * vec_to_obs.x + v_fwd.y * vec_to_obs.y
 
-            if dot > 0.7:
+            if dot > 0.9:
                 return True, obs
     return False, None
 
@@ -46,6 +51,14 @@ def set_target(all_spawn_points, num_positions_to_spawn, num_obstacles, vehicle,
     start_loc = start_waypoint.transform.location
     return destination, start_loc
 
+def save_data(image_dir,writer, frame_number, image_array, control, command_int, speed):
+    #SAVING IMAGE FROM DEPTH CAMERA
+    save_dir = image_dir / f"{frame_number}.png"
+    cv2.imwrite(str(save_dir), image_array)
+
+    #ADDING DATA TO CSV
+    writer.writerow([save_dir, control.steer, control.throttle, control.brake, command_int, speed])
+
 
 def main():
     actor_list = []
@@ -55,40 +68,40 @@ def main():
         client = carla.Client('localhost', 2000)
         client.set_timeout(10.0)
 
-        #connecting to world
-        world = client.get_world()
+        #CONNECTING TO WORLD
+        world = client.load_world('Town02')
         settings = world.get_settings()
         spectator = world.get_spectator()
 
-        #applying synchronous mode
+        #APPLYING SYNCHRONOUS MODE
         settings.synchronous_mode = True
-        settings.fixed_delta_seconds = 0.02
+        settings.fixed_delta_seconds = 0.05
         world.apply_settings(settings)
 
         blueprint_library = world.get_blueprint_library()
         model_3 = blueprint_library.filter("model3")[0]
 
-        #adding depth camera
+        #ADDING DEPTH CAMERA
         depth_bp = blueprint_library.find("sensor.camera.depth")
         depth_bp.set_attribute('image_size_x', f"{IMAGE_WIDTH}")
         depth_bp.set_attribute('image_size_y', f"{IMAGE_HEIGHT}")
         depth_bp.set_attribute('fov', f"{FOV}")
 
 
-        #spawning obstacles
+        #SPAWNING OBSTACLES
         all_spawn_points = world.get_map().get_spawn_points()
         random.shuffle(all_spawn_points)
         num_obstacles = 20
         num_positions_to_spawn = len(all_spawn_points) - num_obstacles - 1
 
-        for i in range(num_obstacles):
-            obs_position = all_spawn_points[i]
-            obs = world.spawn_actor(model_3, obs_position)
-            obs.set_simulate_physics(True)
-            actor_list.append(obs)
-            obstacle_list.append(obs)
+        # for i in range(num_obstacles):
+        #     obs_position = all_spawn_points[i]
+        #     obs = world.spawn_actor(model_3, obs_position)
+        #     obs.set_simulate_physics(True)
+        #     actor_list.append(obs)
+        #     obstacle_list.append(obs)
 
-        #spawning vehicle
+        #SPAWNING VEHICLE
         car_rand = random.randint(0, num_positions_to_spawn) + num_obstacles
         start_position = all_spawn_points [car_rand]
         vehicle = world.spawn_actor(model_3, start_position)
@@ -98,34 +111,48 @@ def main():
         # actor_list.append(vehicle)
 
 
-        #spawning depth camera
+        #SPAWNING DEPTH CAMERA
         camera_transform = carla.Transform(carla.Location(x = 1.5, z = 1.5))
         depth_sensor = world.spawn_actor(depth_bp, camera_transform, attach_to=vehicle)
         actor_list.append(depth_sensor)
 
-        #queue for photos
+        #QUEUE FOR PHOTOS
         sensor_queue = queue.Queue()
         depth_sensor.listen(sensor_queue.put)
 
-        #adding agent
-        agent = BehaviorAgent(vehicle, behavior='normal')
+        #ADDING AGENT
+        agent = BehaviorAgent(vehicle, behavior='cautious')
         agent.ignore_traffic_lights(active = True)
         agent.ignore_stop_signs(active=True)
         agent.ignore_vehicles(active = True)
 
-        #lettin car spawn
+        #LETTIN CAR SPAWN
         for _ in range(20):
             world.tick()
+
+        #CHOOSING DESTINATION
+        destination, start_loc = set_target(all_spawn_points, num_positions_to_spawn, num_obstacles, vehicle, world)
+        agent.set_destination(destination, start_location = start_loc)
+
+        #SETTING SPECTATOR ON THE TOP LOOKING DOWN
+        spectator.set_transform(carla.Transform(carla.Location(x = 100, y = 204, z = 203.0),
+                                                carla.Rotation(pitch = -90.0, yaw = 0.0, roll = 0.0)))
+
+        is_changing_lane = False
+
+        #CATALOG PREPARATION
+        image_dir = output_dir / 'images'
+        image_dir.mkdir(parents = True, exist_ok = True)
+        data_dir = output_dir / 'data.csv'
+        csv_file = open(str(data_dir), 'w', newline='')
+        writer = csv.writer(csv_file)
+        writer.writerow(['image', 'steer', 'throttle', 'brake', 'command', 'speed'])
+
+        frame_number = 0
+        simulation_step = 0
         print("START")
-
-        #choosing destination
-        agent.set_destination(*set_target(all_spawn_points, num_positions_to_spawn, num_obstacles, vehicle, world))
-
-        #setting spectator on the top looking down
-        spectator.set_transform(carla.Transform(carla.Location(x = 6.0, y = 14.5, z = 219.0),
-                                                carla.Rotation(pitch = -90.0, yaw = 90.0, roll = 0.0)))
-
         while True:
+            # print(spectator.get_transform())
             world.tick()
             try:
                 s_frame = sensor_queue.get(True, 1.0)
@@ -134,7 +161,7 @@ def main():
 
             agent._update_information()
 
-            #drawing found route
+            #DRAWING FOUND ROUTE
             route_queue = agent._local_planner._waypoints_queue
             if len(route_queue) > 0:
                 for i, (waypoint, _) in enumerate(route_queue):
@@ -150,28 +177,49 @@ def main():
                         persistent_lines=True
                     )
 
-            if agent.done():
+            if agent.done() and not is_changing_lane:
                 print("DESTINATION REACHED")
-                agent.set_destination(*set_target(all_spawn_points, num_positions_to_spawn, num_obstacles, vehicle, world))
+                destination, start_loc = set_target(all_spawn_points, num_positions_to_spawn, num_obstacles, vehicle, world)
+                agent.set_destination(destination, start_location=start_loc)
+            elif agent.done() and is_changing_lane:
+                is_changing_lane = False
+                agent.set_destination(destination, start_location=start_loc)
 
 
+            # detection, obstacle = obstacle_detection(vehicle, obstacle_list)
+            # if detection and not is_changing_lane:
+            #     is_changing_lane = True
+                # agent.lane_change('right')
+            # print(agent._local_planner.target_road_option)
 
-            #applying control to agent
+
+            #APPLYING CONTROL TO AGENT
             control = agent.run_step()
             vehicle.apply_control(control)
 
-            #converting data from Depth Camera
+            #CONVERTING DATA FROM DEPTH CAMERA
             s_frame.convert(cc.LogarithmicDepth)
             array = np.frombuffer(s_frame.raw_data, dtype = np.dtype("uint8"))
             array = np.reshape(array, (s_frame.height, s_frame.width, 4))
             array = array [:, :, :3]
-            array = array.copy() #to put text in cv2
+            # array = array.copy() #TO PUT TEXT IN CV2
 
+            #GATHERING INFORMATION AND SAVING DATA
             v = vehicle.get_velocity()
-            v_kmh = 3.6 * np.sqrt(v.x**2 + v.y**2 + v.z**2)
-            cv2.putText(array, f"{v_kmh:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255),2)
-            cv2.imshow("",array)
-            cv2.waitKey(1)
+            v = 3.6 * np.sqrt(v.x**2 + v.y**2 + v.z**2)
+            command_int = agent._local_planner.target_road_option
+            if simulation_step % 5 == 0:
+                save_data(image_dir, writer, frame_number, array, control, command_int, v)
+                frame_number += 1
+            simulation_step += 1
+
+            #SHOWING IMAGE FROM DEPTH CAMERA
+            # v = vehicle.get_velocity()
+            # v_kmh = 3.6 * np.sqrt(v.x**2 + v.y**2 + v.z**2)
+            # cv2.putText(array, f"{v_kmh:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255),2)
+            # cv2.imshow("",array)
+            # cv2.waitKey(1)
+
 
     finally:
         settings = world.get_settings()
@@ -181,6 +229,7 @@ def main():
         for actor in actor_list:
             actor.destroy()
         cv2.destroyAllWindows()
+        csv_file.close()
         print("SUCCESSFULLY EXECUTED")
 
 
