@@ -49,6 +49,102 @@ class DrivingDataModule (pl.LightningDataModule):
     def val_dataloader(self):
         return DataLoader(self.val_dataset, batch_size=self.batch_size, shuffle=False)
 
+from torchmetrics.regression import MeanAbsoluteError
+from torch import nn
+from torch import optim
+import torch.nn.functional as F
+
+class DrivingModel(pl.LightningModule):
+    def __init__(self):
+        super().__init__()
+        self.loss_function = nn.MSELoss()
+
+        self.conv1 = nn.Conv2d(3, 4, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(4)
+        self.mp1 = nn.MaxPool2d(2)
+
+        self.conv2 = nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm2d(4)
+        self.mp2 = nn.MaxPool2d(2)
+
+        self.conv3 = nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1)
+        self.bn3 = nn.BatchNorm2d(4)
+        self.mp3 = nn.MaxPool2d(2)
+
+        self.fc1 = nn.LazyLinear(300)
+        self.fc2 = nn.Linear(300, 100)
+
+        #steer throttle brake
+        self.fc3 = nn.Linear(100, 3)
+
+        self.relu = nn.ReLU()
+        self.flat = nn.Flatten()
+        self.train_mae = MeanAbsoluteError()
+        self.val_mae = MeanAbsoluteError()
+
+    def forward(self, x, command, speed):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        x = self.mp1(x)
+
+        x = self.conv2(x)
+        x = self.bn2(x)
+        x = self.relu(x)
+        x = self.mp2(x)
+
+
+        x = self.conv3(x)
+        x = self.bn3(x)
+        x = self.relu(x)
+        x = self.mp3(x)
+
+        x = self.flat(x)
+
+        command = command.view(-1, 1).float()
+        speed = speed.view(-1, 1).float()
+        combined = torch.cat((x, command, speed), dim = 1)
+
+        x = self.fc1(combined)
+        x = self.relu(x)
+        x = self.fc2(x)
+        x = self.relu(x)
+        x = self.fc3(x)
+
+        return x
+
+    def configure_optimizers(self):
+        optimizer = optim.SGD(self.parameters(), lr=0.001)
+        return optimizer
+
+    def training_step(self, train_batch, batch_idx):
+        image, command, speed, labels = train_batch
+
+
+        outputs = self.forward(image.float(), command.float(), speed.float())
+        loss = self.loss_function(outputs, labels)
+
+        self.log('train_loss', loss, on_step= True, on_epoch = True)
+
+        mae_value = self.train_mae(outputs, labels)
+        self.log('train_mae', mae_value, on_epoch=True, on_step= False)
+
+        return loss
+
+    def validation_step(self, train_batch, batch_idx):
+        image, command, speed, labels = train_batch
+
+
+        outputs = self.forward(image.float(), command.float(), speed.float())
+        loss = self.loss_function(outputs, labels)
+
+        self.log('val_loss', loss, on_step= True, on_epoch = True)
+
+        mae_value = self.val_mae(outputs, labels)
+        self.log('val_mae', mae_value, on_epoch=True, on_step= False)
+
+        return loss
+
 location = Path(__file__).resolve().parent
 data_path = Path('../labels')
 csv_path = data_path / 'final_annotations.csv'
@@ -69,14 +165,14 @@ ddm.setup()
 # plt.imshow(image.permute(1, 2, 0))
 # plt.show()
 
-import torchmetrics
-from torch import nn
-from torch import optim
-import torch.nn.functional as F
+driving_model = DrivingModel()
 
-# class DrivingModule(pl.LightningModule):
-#     def __init__(self):
-#         super().__init__()
+from pytorch_lightning.loggers import TensorBoardLogger
+logger=TensorBoardLogger("agent_basic_logs", name="agent_basic")
+trainer=pl.Trainer(logger=logger, max_epochs=30, log_every_n_steps=1, accelerator="gpu")
+trainer.fit(driving_model, ddm)
+
+
 
 
 
