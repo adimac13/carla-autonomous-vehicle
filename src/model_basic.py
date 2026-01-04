@@ -7,6 +7,9 @@ import pytorch_lightning as pl
 import numpy as np
 from pathlib import Path
 
+torch.backends.cuda.matmul.allow_tf32 = True
+torch.backends.cudnn.allow_tf32 = True
+
 class DrivingDataset(Dataset):
     def __init__(self, csv_file, transform = None):
         self.annotations = pd.read_csv(csv_file)
@@ -55,61 +58,113 @@ from torch import optim
 import torch.nn.functional as F
 
 class DrivingModel(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, method):
         super().__init__()
         self.loss_function = nn.MSELoss()
 
-        self.conv1 = nn.Conv2d(3, 4, kernel_size=3, stride=1, padding=1)
-        self.bn1 = nn.BatchNorm2d(4)
-        self.mp1 = nn.MaxPool2d(2)
-
-        self.conv2 = nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1)
-        self.bn2 = nn.BatchNorm2d(4)
-        self.mp2 = nn.MaxPool2d(2)
-
-        self.conv3 = nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1)
-        self.bn3 = nn.BatchNorm2d(4)
-        self.mp3 = nn.MaxPool2d(2)
-
-        self.fc1 = nn.LazyLinear(300)
-        self.fc2 = nn.Linear(300, 100)
-
-        #steer throttle brake
-        self.fc3 = nn.Linear(100, 3)
-
         self.relu = nn.ReLU()
+        self.elu = nn.ELU()
         self.flat = nn.Flatten()
         self.train_mae = MeanAbsoluteError()
         self.val_mae = MeanAbsoluteError()
+        self.method = method
+
+        if self.method == 0:
+            self.conv1 = nn.Conv2d(3, 4, kernel_size=3, stride=1, padding=1)
+            self.bn1 = nn.BatchNorm2d(4)
+            self.mp1 = nn.MaxPool2d(2)
+
+            self.conv2 = nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1)
+            self.bn2 = nn.BatchNorm2d(4)
+            self.mp2 = nn.MaxPool2d(2)
+
+            self.conv3 = nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1)
+            self.bn3 = nn.BatchNorm2d(4)
+            self.mp3 = nn.MaxPool2d(2)
+
+            self.fc1 = nn.LazyLinear(300)
+            self.fc2 = nn.Linear(300, 100)
+
+            #steer throttle brake
+            self.fc3 = nn.Linear(100, 3)
+
+        elif self.method == 1:
+            self.conv1 = nn.Conv2d(3, 10, kernel_size=5, stride=2, padding=1)
+            self.bn1 = nn.BatchNorm2d(10)
+
+            self.conv2 = nn.Conv2d(10, 20, kernel_size=5, stride=2, padding=1)
+            self.bn2 = nn.BatchNorm2d(20)
+
+            self.conv3 = nn.Conv2d(20, 25, kernel_size=3, stride=1, padding=1)
+            self.bn3 = nn.BatchNorm2d(25)
+
+            self.fc1 = nn.LazyLinear(100)
+            self.dropout = nn.Dropout(0.2)
+
+            self.fc2 = nn.Linear(100, 50)
+            self.fc3 = nn.Linear(50, 10)
+
+            # steer throttle brake
+            self.fc4 = nn.Linear(10, 3)
 
     def forward(self, x, command, speed):
-        x = self.conv1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.mp1(x)
+        if self.method == 0:
+            x = self.conv1(x)
+            x = self.bn1(x)
+            x = self.relu(x)
+            x = self.mp1(x)
 
-        x = self.conv2(x)
-        x = self.bn2(x)
-        x = self.relu(x)
-        x = self.mp2(x)
+            x = self.conv2(x)
+            x = self.bn2(x)
+            x = self.relu(x)
+            x = self.mp2(x)
 
+            x = self.conv3(x)
+            x = self.bn3(x)
+            x = self.relu(x)
+            x = self.mp3(x)
 
-        x = self.conv3(x)
-        x = self.bn3(x)
-        x = self.relu(x)
-        x = self.mp3(x)
+            x = self.flat(x)
 
-        x = self.flat(x)
+            command = command.view(-1, 1).float()
+            speed = speed.view(-1, 1).float()
+            combined = torch.cat((x, command, speed), dim = 1)
 
-        command = command.view(-1, 1).float()
-        speed = speed.view(-1, 1).float()
-        combined = torch.cat((x, command, speed), dim = 1)
+            x = self.fc1(combined)
+            x = self.relu(x)
+            x = self.fc2(x)
+            x = self.relu(x)
+            x = self.fc3(x)
 
-        x = self.fc1(combined)
-        x = self.relu(x)
-        x = self.fc2(x)
-        x = self.relu(x)
-        x = self.fc3(x)
+        elif self.method == 1:
+            x = self.conv1(x)
+            x = self.bn1(x)
+            x = self.elu(x)
+
+            x = self.conv2(x)
+            x = self.bn2(x)
+            x = self.elu(x)
+
+            x = self.conv3(x)
+            x = self.bn3(x)
+            x = self.elu(x)
+
+            x = self.flat(x)
+
+            command = command.view(-1, 1).float()
+            speed = speed.view(-1, 1).float()
+            combined = torch.cat((x, command, speed), dim = 1)
+
+            x = self.fc1(combined)
+            x = self.elu(x)
+            x = self.dropout(x)
+
+            x = self.fc2(x)
+            x = self.elu(x)
+            x = self.dropout(x)
+            x = self.fc3(x)
+            x = self.elu(x)
+            x = self.fc4(x)
 
         return x
 
@@ -145,32 +200,35 @@ class DrivingModel(pl.LightningModule):
 
         return loss
 
-location = Path(__file__).resolve().parent
-data_path = Path('../labels')
-csv_path = data_path / 'final_annotations.csv'
+if __name__ == "__main__":
+    location = Path(__file__).resolve().parent
+    data_path = Path('../labels')
+    csv_path = data_path / 'final_annotations.csv'
 
-ddm = DrivingDataModule(str(csv_path))
-ddm.setup()
+    ddm = DrivingDataModule(str(csv_path))
+    ddm.setup()
 
-#FOR DEBUG
-# count = [0, 0, 0 ,0, 0, 0]
-# for el in ddm.val_dataset:
-#     count[el[1]] += 1
-# print(len(ddm.val_dataset))
-# print(count)
+    #FOR DEBUG
+    # count = [0, 0, 0 ,0, 0, 0]
+    # for el in ddm.val_dataset:
+    #     count[el[1]] += 1
+    # print(len(ddm.val_dataset))
+    # print(count)
 
-# print(ddm.train_dataset[0][2])
-# import matplotlib.pyplot as plt
-# image = ddm.train_dataset[0][0]
-# plt.imshow(image.permute(1, 2, 0))
-# plt.show()
+    # print(ddm.train_dataset[0][2])
+    # import matplotlib.pyplot as plt
+    # image = ddm.train_dataset[0][0]
+    # plt.imshow(image.permute(1, 2, 0))
+    # plt.show()
 
-driving_model = DrivingModel()
+    #method = 0 => simple 3xCNN + 3xLinear
+    #method = 1 => more advanced 3xCNN + 4xLinear + Dropout
+    driving_model = DrivingModel(method = 1)
 
-from pytorch_lightning.loggers import TensorBoardLogger
-logger=TensorBoardLogger("agent_basic_logs", name="agent_basic")
-trainer=pl.Trainer(logger=logger, max_epochs=30, log_every_n_steps=1, accelerator="gpu")
-trainer.fit(driving_model, ddm)
+    from pytorch_lightning.loggers import TensorBoardLogger
+    logger=TensorBoardLogger("../logs", name="agent_basic")
+    trainer=pl.Trainer(logger=logger, max_epochs=200, log_every_n_steps=1, accelerator="gpu")
+    trainer.fit(driving_model, ddm)
 
 
 

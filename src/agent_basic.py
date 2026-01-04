@@ -126,7 +126,7 @@ def main():
         agent.ignore_stop_signs(active=True)
         agent.ignore_vehicles(active = True)
 
-        #LETTIN CAR SPAWN
+        #LETTING CAR SPAWN
         for _ in range(20):
             world.tick()
 
