@@ -20,7 +20,7 @@ IMAGE_WIDTH = 450
 IMAGE_HEIGHT = 250
 FOV = 120
 script_location = Path(__file__).resolve().parent
-output_dir = script_location.parent / 'data'
+output_dir = script_location.parent / 'labels'
 
 def obstacle_detection(vehicle, obstacle_list, dist_threshold = 5.0):
     v_loc = vehicle.get_location()
