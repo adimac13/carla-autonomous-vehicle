@@ -2,7 +2,7 @@ import torch
 from torchvision import transforms
 from pathlib import Path
 from model_basic import DrivingModel
-from agent_basic import set_target
+from agent_basic import set_target, IMAGE_WIDTH, IMAGE_HEIGHT
 import carla
 import random
 import queue
@@ -11,8 +11,6 @@ from agents.navigation.behavior_agent import BehaviorAgent
 from agents.navigation.local_planner import RoadOption
 from carla import ColorConverter as cc
 
-IMAGE_WIDTH = 450
-IMAGE_HEIGHT = 250
 FOV = 120
 
 def process_frame(camera_image, speed, command):
@@ -26,9 +24,9 @@ def process_frame(camera_image, speed, command):
         outputs = model(image_tensor, command_tensor, speed_tensor)
         #Model returns => steer, throttle, brake
 
-    steer, throttle, brake = float(outputs[0].cpu().numpy())
+    steer, throttle, brake = outputs[0].cpu().numpy()
 
-    return steer, throttle, brake
+    return float(steer), float(throttle), float(brake)
 
 def world_setup():
     actor_list = []
@@ -78,18 +76,11 @@ def world_setup():
         sensor_queue = queue.Queue()
         depth_sensor.listen(sensor_queue.put)
 
-
-
         #ADDING AGENT
         agent = BehaviorAgent(vehicle, behavior='cautious')
         agent.ignore_traffic_lights(active = True)
         agent.ignore_stop_signs(active=True)
         agent.ignore_vehicles(active = True)
-
-        #SPAWNING DEPTH CAMERA
-        camera_transform = carla.Transform(carla.Location(x=1.5, z=1.5))
-        depth_sensor = world.spawn_actor(depth_bp, camera_transform, attach_to=vehicle)
-        actor_list.append(depth_sensor)
 
         # LETTING CAR SPAWN
         for _ in range(20):
@@ -147,11 +138,13 @@ def world_setup():
 
             steer, throttle, brake = process_frame(array, v, command_int)
 
-            control = agent.run_step()
-            control.steer = steer
-            control.throttle = throttle
-            control.brake = brake
+            control = carla.VehicleControl()
+            control.steer = float(np.clip(steer, -1.0, 1.0))
+            control.throttle = float(np.clip(throttle, 0.0, 1.0))
+            control.brake = float(np.clip(brake, 0.0, 1.0))
             vehicle.apply_control(control)
+
+            print(steer, throttle, brake)
 
 
     finally:
@@ -177,7 +170,10 @@ if __name__ == "__main__":
         raise FileNotFoundError(f"Model not found: {checkpoint_path}")
 
     #Lodaing model to gpu
-    model = DrivingModel.load_from_checkpoint(model_path)
+    #version 6 - 0      450x250
+    #version 7 - 1      450x250
+    #version 8 - 0      500x300
+    model = DrivingModel.load_from_checkpoint(model_path, method = 0)
     model.eval()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
@@ -185,6 +181,3 @@ if __name__ == "__main__":
     transform = transforms.Compose([transforms.ToPILImage(), transforms.ToTensor()])
 
     world_setup()
-
-
-

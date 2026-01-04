@@ -223,16 +223,9 @@ if __name__ == "__main__":
 
     #method = 0 => simple 3xCNN + 3xLinear
     #method = 1 => more advanced 3xCNN + 4xLinear + Dropout
-    driving_model = DrivingModel(method = 1)
+    driving_model = DrivingModel(method = 0)
 
     from pytorch_lightning.loggers import TensorBoardLogger
     logger=TensorBoardLogger("../logs", name="agent_basic")
-    trainer=pl.Trainer(logger=logger, max_epochs=200, log_every_n_steps=1, accelerator="gpu")
+    trainer=pl.Trainer(logger=logger, max_epochs=150, log_every_n_steps=1, accelerator="gpu")
     trainer.fit(driving_model, ddm)
-
-
-
-
-
-
-

@@ -2,7 +2,7 @@ import pandas as pd
 
 INPUT_CSV = '../labels/annotations.csv'
 OUTPUT_CSV = '../labels/final_annotations.csv'
-MAX_SAMPLES = 1500
+MAX_SAMPLES = 2000
 
 def balance_dataset():
     annotations = pd.read_csv(INPUT_CSV)

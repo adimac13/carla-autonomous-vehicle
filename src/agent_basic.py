@@ -16,8 +16,8 @@ from agents.navigation.behavior_agent import BehaviorAgent
 from agents.navigation.local_planner import RoadOption
 
 
-IMAGE_WIDTH = 450
-IMAGE_HEIGHT = 250
+IMAGE_WIDTH = 500
+IMAGE_HEIGHT = 300
 FOV = 120
 script_location = Path(__file__).resolve().parent
 output_dir = script_location.parent / 'labels'
@@ -208,7 +208,7 @@ def main():
             v = vehicle.get_velocity()
             v = 3.6 * np.sqrt(v.x**2 + v.y**2 + v.z**2)
             command_int = agent._local_planner.target_road_option
-            if simulation_step % 5 == 0:
+            if simulation_step % 2 == 0:
                 save_data(image_dir, writer, frame_number, array, control, command_int, v)
                 frame_number += 1
             simulation_step += 1
