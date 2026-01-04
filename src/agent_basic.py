@@ -1,3 +1,5 @@
+#TODO create new approach based on DAVE-2
+#TODO add changing weather
 import carla
 import random
 import queue

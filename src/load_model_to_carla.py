@@ -123,9 +123,9 @@ def world_setup():
 
             if agent.done():
                 print("DESTINATION REACHED")
-                destination, start_loc = set_target(all_spawn_points, num_positions_to_spawn, num_obstacles, vehicle,
-                                                    world)
-                agent.set_destination(destination, start_location=start_loc)
+                # destination, start_loc = set_target(all_spawn_points, num_positions_to_spawn, num_obstacles, vehicle,
+                #                                     world)
+                # agent.set_destination(destination, start_location=start_loc)
 
             s_frame.convert(cc.LogarithmicDepth)
             array = np.frombuffer(s_frame.raw_data, dtype = np.dtype("uint8"))
@@ -160,7 +160,7 @@ if __name__ == "__main__":
     #Uplodaing model from .ckpt file
     log_path = Path("../logs")
     agent_path = Path("agent_basic")
-    version = 6
+    version = 8
 
     checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
 
