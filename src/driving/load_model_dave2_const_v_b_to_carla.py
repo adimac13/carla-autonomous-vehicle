@@ -145,12 +145,12 @@ def world_setup():
 
             control = carla.VehicleControl()
             control.steer = float(np.clip(steer, -1.0, 1.0))
-            control.throttle = 0.2
+            control.throttle = 0.15
             control.brake = 0.0
 
             vehicle.apply_control(control)
 
-            # print(control.steer, control.throttle, control.brake)
+            print(command_int, control.steer)
 
 
     finally:
@@ -166,7 +166,7 @@ if __name__ == "__main__":
     #Uplodaing model from .ckpt file
     log_path = Path("../../logs")
     agent_path = Path("agent_dave2_const_v_b")
-    version = 1
+    version = 6
 
     checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
 

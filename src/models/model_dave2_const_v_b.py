@@ -1,4 +1,5 @@
-#Model based on NVIDIA's DAVE-2
+#Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
+#TODO fix command_int
 import pandas as pd
 import torch
 import cv2
@@ -60,7 +61,7 @@ class DrivingModel(pl.LightningModule):
         self.loss_function = nn.MSELoss()
         self.elu = nn.ELU()
         self.flat = nn.Flatten()
-        self.dropout = nn.Dropout(0.05)
+        self.dropout = nn.Dropout(0.2)
         self.train_mae = MeanAbsoluteError()
         self.val_mae = MeanAbsoluteError()
 
@@ -123,7 +124,8 @@ class DrivingModel(pl.LightningModule):
         return x
 
     def configure_optimizers(self):
-        optimizer = optim.SGD(self.parameters(), lr=0.001)
+        # optimizer = optim.SGD(self.parameters(), lr=0.001)
+        optimizer = optim.Adam(self.parameters(), lr=1e-4)
         return optimizer
 
     def training_step(self, train_batch, batch_idx):

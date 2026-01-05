@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import csv
 from pathlib import Path
+import shutil
 
 CARLA_ROOT = "C:/CARLA_0.9.16/PythonAPI/carla"
 sys.path.append(CARLA_ROOT)
@@ -18,7 +19,7 @@ from agents.navigation.local_planner import RoadOption
 IMAGE_WIDTH = 500
 IMAGE_HEIGHT = 300
 FOV = 100
-STEER_CORRECTION = 0.15
+STEER_CORRECTION = 0.08
 output_dir = Path("../../labels/dave2_const_v_s")
 
 def set_target(all_spawn_points, num_positions_to_spawn, num_obstacles, vehicle, world):
@@ -145,7 +146,12 @@ def main():
         #CATALOG PREPARATION
         image_dir = output_dir / 'images'
         # print(f"Saving to {str(image_dir)}")
+
+        #Deletes images if necessary
+        if image_dir.exists():
+            shutil.rmtree(image_dir)
         image_dir.mkdir(parents = True, exist_ok = True)
+
         data_dir = output_dir / 'annotations.csv'
         csv_file = open(str(data_dir), 'w', newline='')
         writer = csv.writer(csv_file)
@@ -190,7 +196,7 @@ def main():
             #APPLYING CONTROL TO AGENT
             control = agent.run_step()
             #Const throttle and brake
-            control.throttle = 0.2
+            control.throttle = 0.18
             control.brake = 0.0
             vehicle.apply_control(control)
 
@@ -207,12 +213,12 @@ def main():
 
             #If car goes straight save 1 in 5 images
             if command_int == 4:
-                if command4_step % 5 == 0:
+                if command4_step % 6 == 0:
                     save_data(image_dir, writer, frame_number, image_left, image_center, image_right, control, command_int, v)
                 command4_step += 1
                 frame_number += 1
 
-            elif simulation_step % 2 == 0:
+            else:
                 save_data(image_dir, writer, frame_number, image_left,image_center, image_right, control, command_int, v)
                 frame_number += 1
 
