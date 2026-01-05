@@ -28,14 +28,10 @@ class DrivingDataset(Dataset):
             image = self.transform(image)
 
         steer = self.annotations.iloc[idx]['steer']
-        throttle = self.annotations.iloc[idx]['throttle']
-        brake = self.annotations.iloc[idx]['brake']
-        speed = self.annotations.iloc[idx]['speed']
-        labels = torch.tensor([steer, throttle, brake], dtype = torch.float32)
 
         command = torch.tensor(int(self.annotations.iloc[idx]['command']), dtype = torch.long)
 
-        return image, command, speed, labels
+        return image, command, steer
 
 class DrivingDataModule (pl.LightningDataModule):
     def __init__(self, csv_path, batch_size = 32):
@@ -84,11 +80,11 @@ class DrivingModel(pl.LightningModule):
 
         self.fc3 = nn.Linear(50, 10)
 
-        #steer throttle brake
-        self.fc4 = nn.Linear(10, 3)
+        #steer
+        self.fc4 = nn.Linear(10, 1)
 
 
-    def forward(self, x, command, speed):
+    def forward(self, x, command):
 
         x = self.conv1(x)
         x = self.elu(x)
@@ -108,8 +104,7 @@ class DrivingModel(pl.LightningModule):
         x = self.flat(x)
 
         command = command.view(-1, 1).float()
-        speed = speed.view(-1, 1).float()
-        combined = torch.cat((x, command, speed), dim = 1)
+        combined = torch.cat((x, command), dim = 1)
 
         x = self.fc1(combined)
         x = self.dropout(x)
@@ -132,34 +127,36 @@ class DrivingModel(pl.LightningModule):
         return optimizer
 
     def training_step(self, train_batch, batch_idx):
-        image, command, speed, labels = train_batch
+        image, command, steer = train_batch
 
-        outputs = self.forward(image.float(), command.float(), speed.float())
-        loss = self.loss_function(outputs, labels)
+        outputs = self.forward(image.float(), command.float())
+        steer = steer.view(-1, 1).float()
+        loss = self.loss_function(outputs, steer)
 
         self.log('train_loss', loss, on_step= True, on_epoch = True)
 
-        mae_value = self.train_mae(outputs, labels)
+        mae_value = self.train_mae(outputs, steer)
         self.log('train_mae', mae_value, on_epoch=True, on_step= False)
 
         return loss
 
     def validation_step(self, train_batch, batch_idx):
-        image, command, speed, labels = train_batch
+        image, command, steer = train_batch
 
-        outputs = self.forward(image.float(), command.float(), speed.float())
-        loss = self.loss_function(outputs, labels)
+        outputs = self.forward(image.float(), command.float())
+        steer = steer.view(-1, 1).float()
+        loss = self.loss_function(outputs, steer)
 
         self.log('val_loss', loss, on_step= True, on_epoch = True)
 
-        mae_value = self.val_mae(outputs, labels)
+        mae_value = self.train_mae(outputs, steer)
         self.log('val_mae', mae_value, on_epoch=True, on_step= False)
 
         return loss
 
 if __name__ == "__main__":
     location = Path(__file__).resolve().parent
-    data_path = Path('../../labels/dave2')
+    data_path = Path('../../labels/dave2_const_v_s')
     csv_path = data_path / 'final_annotations.csv'
 
     ddm = DrivingDataModule(str(csv_path))
@@ -182,6 +179,6 @@ if __name__ == "__main__":
     driving_model = DrivingModel()
 
     from pytorch_lightning.loggers import TensorBoardLogger
-    logger=TensorBoardLogger("../../logs", name="agent_dave2")
+    logger=TensorBoardLogger("../../logs", name="agent_dave2_const_v_b")
     trainer=pl.Trainer(logger=logger, max_epochs=10, log_every_n_steps=1, accelerator="gpu")
     trainer.fit(driving_model, ddm)

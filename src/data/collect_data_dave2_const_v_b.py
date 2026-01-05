@@ -1,4 +1,4 @@
-#Model based on NVIDIA's DAVE-2
+#Model based on NVIDIA's DAVE-2 with constant values of velocity and brake
 import carla
 import random
 import queue
@@ -18,8 +18,8 @@ from agents.navigation.local_planner import RoadOption
 IMAGE_WIDTH = 500
 IMAGE_HEIGHT = 300
 FOV = 100
-STEER_CORRECTION = 0.1
-output_dir = Path("../../labels/dave2")
+STEER_CORRECTION = 0.15
+output_dir = Path("../../labels/dave2_const_v_s")
 
 def set_target(all_spawn_points, num_positions_to_spawn, num_obstacles, vehicle, world):
     destination = all_spawn_points[random.randint(0, num_positions_to_spawn) + num_obstacles].location
@@ -189,6 +189,9 @@ def main():
 
             #APPLYING CONTROL TO AGENT
             control = agent.run_step()
+            #Const throttle and brake
+            control.throttle = 0.2
+            control.brake = 0.0
             vehicle.apply_control(control)
 
 
@@ -202,7 +205,7 @@ def main():
             v = 3.6 * np.sqrt(v.x**2 + v.y**2 + v.z**2)
             command_int = agent._local_planner.target_road_option
 
-            #If car goes straight save 1 in 10 images
+            #If car goes straight save 1 in 5 images
             if command_int == 4:
                 if command4_step % 5 == 0:
                     save_data(image_dir, writer, frame_number, image_left, image_center, image_right, control, command_int, v)
@@ -214,9 +217,9 @@ def main():
                 frame_number += 1
 
 
-            if not(simulation_step % 1000):
-                selected_weather = random.choice(weather_presets)
-                world.set_weather(selected_weather)
+            # if not(simulation_step % 1000):
+            #     selected_weather = random.choice(weather_presets)
+            #     world.set_weather(selected_weather)
             frame_number += 1
 
             simulation_step += 1

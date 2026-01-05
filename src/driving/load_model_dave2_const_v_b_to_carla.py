@@ -8,8 +8,8 @@ root = "../.."
 if str(root) not in sys.path:
     sys.path.append(str(root))
 
-from src.models.model_dave2 import DrivingModel
-from src.data.collect_data_dave2 import set_target, IMAGE_WIDTH, IMAGE_HEIGHT, FOV, raw_data_process
+from src.models.model_dave2_const_v_b import DrivingModel
+from src.data.collect_data_dave2_const_v_b import set_target, IMAGE_WIDTH, IMAGE_HEIGHT, FOV, raw_data_process
 import carla
 import random
 import queue
@@ -19,21 +19,20 @@ from agents.navigation.local_planner import RoadOption
 from carla import ColorConverter as cc
 
 
-def process_frame(camera_image, speed, command):
+def process_frame(camera_image, command):
     camera_image = cv2.cvtColor(camera_image, cv2.COLOR_BGR2YUV)
     image_tensor = transform(camera_image)
     image_tensor = image_tensor.unsqueeze(0).to(device)
 
     command_tensor = torch.tensor(command, dtype = torch.long).to(device)
-    speed_tensor = torch.tensor(speed, dtype = torch.float32).to(device)
 
     with torch.no_grad():
-        outputs = model(image_tensor, command_tensor, speed_tensor)
-        #Model returns => steer, throttle, brake
+        outputs = model(image_tensor, command_tensor)
+        #Model returns => steer
 
-    steer, throttle, brake = outputs[0].cpu().numpy()
+    steer = outputs.item()
 
-    return float(steer), float(throttle), float(brake)
+    return steer
 
 def world_setup():
     actor_list = []
@@ -75,7 +74,10 @@ def world_setup():
         rgb_bp.set_attribute('fov', f"{FOV}")
 
         #SPAWNING RGB CAMERAS
-        camera_center_transform = carla.Transform(carla.Location(x = 1.5, z = 1.5))
+        camera_x_offset = 1.0
+        camera_z_offset = 1.5
+
+        camera_center_transform = carla.Transform(carla.Location(x = camera_x_offset, z = camera_z_offset))
         center_sensor = world.spawn_actor(rgb_bp, camera_center_transform, attach_to=vehicle)
         actor_list.append(center_sensor)
 
@@ -137,23 +139,18 @@ def world_setup():
 
             image_center = raw_data_process(center_frame)
 
-            v = vehicle.get_velocity()
-            v = 3.6 * np.sqrt(v.x**2 + v.y**2 + v.z**2)
             command_int = agent._local_planner.target_road_option
 
-            steer, throttle, brake = process_frame(image_center, v, command_int)
+            steer = process_frame(image_center, command_int)
 
             control = carla.VehicleControl()
             control.steer = float(np.clip(steer, -1.0, 1.0))
-            control.throttle = float(np.clip(throttle, 0.0, 1.0))
+            control.throttle = 0.2
+            control.brake = 0.0
 
-            if brake < 0.05:
-                control.brake = float(np.clip(brake, 0.0, 1.0))
-            else:
-                control.brake = 0.0
             vehicle.apply_control(control)
 
-            print(control.steer, control.throttle, control.brake)
+            # print(control.steer, control.throttle, control.brake)
 
 
     finally:
@@ -168,8 +165,8 @@ def world_setup():
 if __name__ == "__main__":
     #Uplodaing model from .ckpt file
     log_path = Path("../../logs")
-    agent_path = Path("agent_dave2")
-    version = 3
+    agent_path = Path("agent_dave2_const_v_b")
+    version = 1
 
     checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
 
