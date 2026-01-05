@@ -1,7 +1,7 @@
 import pandas as pd
 
-INPUT_CSV = '../labels/annotations.csv'
-OUTPUT_CSV = '../labels/final_annotations.csv'
+INPUT_CSV = '../../depth_camera/labels/annotations.csv'
+OUTPUT_CSV = '../../depth_camera/labels/final_annotations.csv'
 MAX_SAMPLES = 2000
 
 def balance_dataset():
@@ -9,16 +9,16 @@ def balance_dataset():
     print("BEFORE BALANCE")
     print(annotations['command'].value_counts().sort_index())
 
-    balanced_dfs = []
+    balanced_annotations = []
 
     for command_id in annotations['command'].unique():
         subset = annotations[annotations['command'] == command_id]
         count = len(subset)
         if count > MAX_SAMPLES:
             subset = subset.sample(n=MAX_SAMPLES, random_state=42)
-        balanced_dfs.append(subset)
+        balanced_annotations.append(subset)
 
-    final_df = pd.concat(balanced_dfs)
+    final_df = pd.concat(balanced_annotations)
 
     final_df = final_df.sample(frac=1, random_state=42)
     final_df.to_csv(OUTPUT_CSV, index=False)

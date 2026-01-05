@@ -1,8 +1,8 @@
 import torch
 from torchvision import transforms
 from pathlib import Path
-from model_basic import DrivingModel
-from agent_basic import set_target, IMAGE_WIDTH, IMAGE_HEIGHT
+from src.models.model_depth_camera import DrivingModel
+from src.data.collect_data_depth_camera import set_target, IMAGE_WIDTH, IMAGE_HEIGHT
 import carla
 import random
 import queue

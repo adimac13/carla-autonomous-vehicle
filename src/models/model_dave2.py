@@ -1,3 +1,6 @@
+#Model based on NVIDIA's DAVE-2
+#TODO add changing weather
+#TODO fix turning constantly left
 import pandas as pd
 import torch
 import cv2
@@ -21,7 +24,7 @@ class DrivingDataset(Dataset):
     def __getitem__(self, idx):
         img_path = self.annotations.iloc[idx]['image']
         image = cv2.imread(img_path)
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2YUV)
 
         if self.transform:
             image = self.transform(image)
@@ -43,7 +46,7 @@ class DrivingDataModule (pl.LightningDataModule):
         self.batch_size = batch_size
 
     def setup(self, stage = None):
-        transform = transforms.Compose([transforms.ToPILImage(), transforms.ToTensor()])
+        transform = transforms.Compose([transforms.ToPILImage(), transforms.Resize((66,200)), transforms.ToTensor()])
         full_dataset = DrivingDataset(self.csv_path, transform)
         self.val_dataset, self.train_dataset = random_split(full_dataset,
                                                              [len(full_dataset)//10, len(full_dataset) - len(full_dataset)//10])
@@ -58,113 +61,71 @@ from torch import optim
 import torch.nn.functional as F
 
 class DrivingModel(pl.LightningModule):
-    def __init__(self, method):
+    def __init__(self):
         super().__init__()
         self.loss_function = nn.MSELoss()
-
-        self.relu = nn.ReLU()
         self.elu = nn.ELU()
         self.flat = nn.Flatten()
+        self.dropout = nn.Dropout(0.05)
         self.train_mae = MeanAbsoluteError()
         self.val_mae = MeanAbsoluteError()
-        self.method = method
 
-        if self.method == 0:
-            self.conv1 = nn.Conv2d(3, 4, kernel_size=3, stride=1, padding=1)
-            self.bn1 = nn.BatchNorm2d(4)
-            self.mp1 = nn.MaxPool2d(2)
+        self.conv1 = nn.Conv2d(3, 24, kernel_size=5, stride=2, padding=0)
 
-            self.conv2 = nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1)
-            self.bn2 = nn.BatchNorm2d(4)
-            self.mp2 = nn.MaxPool2d(2)
+        self.conv2 = nn.Conv2d(24, 36, kernel_size=5, stride=2, padding=0)
 
-            self.conv3 = nn.Conv2d(4, 4, kernel_size=3, stride=1, padding=1)
-            self.bn3 = nn.BatchNorm2d(4)
-            self.mp3 = nn.MaxPool2d(2)
+        self.conv3 = nn.Conv2d(36, 48, kernel_size=5, stride=2, padding=0)
 
-            self.fc1 = nn.LazyLinear(300)
-            self.fc2 = nn.Linear(300, 100)
+        self.conv4 = nn.Conv2d(48, 64, kernel_size=3, stride=1, padding=0)
 
-            #steer throttle brake
-            self.fc3 = nn.Linear(100, 3)
+        self.conv5 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=0)
 
-        elif self.method == 1:
-            self.conv1 = nn.Conv2d(3, 10, kernel_size=5, stride=2, padding=1)
-            self.bn1 = nn.BatchNorm2d(10)
+        self.fc1 = nn.LazyLinear(100)
 
-            self.conv2 = nn.Conv2d(10, 20, kernel_size=5, stride=2, padding=1)
-            self.bn2 = nn.BatchNorm2d(20)
+        self.fc2 = nn.Linear(100, 50)
 
-            self.conv3 = nn.Conv2d(20, 25, kernel_size=3, stride=1, padding=1)
-            self.bn3 = nn.BatchNorm2d(25)
+        self.fc3 = nn.Linear(50, 10)
 
-            self.fc1 = nn.LazyLinear(100)
-            self.dropout = nn.Dropout(0.2)
+        #steer throttle brake
+        self.fc4 = nn.Linear(10, 3)
 
-            self.fc2 = nn.Linear(100, 50)
-            self.fc3 = nn.Linear(50, 10)
-
-            # steer throttle brake
-            self.fc4 = nn.Linear(10, 3)
 
     def forward(self, x, command, speed):
-        if self.method == 0:
-            x = self.conv1(x)
-            x = self.bn1(x)
-            x = self.relu(x)
-            x = self.mp1(x)
 
-            x = self.conv2(x)
-            x = self.bn2(x)
-            x = self.relu(x)
-            x = self.mp2(x)
+        x = self.conv1(x)
+        x = self.elu(x)
 
-            x = self.conv3(x)
-            x = self.bn3(x)
-            x = self.relu(x)
-            x = self.mp3(x)
+        x = self.conv2(x)
+        x = self.elu(x)
 
-            x = self.flat(x)
+        x = self.conv3(x)
+        x = self.elu(x)
 
-            command = command.view(-1, 1).float()
-            speed = speed.view(-1, 1).float()
-            combined = torch.cat((x, command, speed), dim = 1)
+        x = self.conv4(x)
+        x = self.elu(x)
 
-            x = self.fc1(combined)
-            x = self.relu(x)
-            x = self.fc2(x)
-            x = self.relu(x)
-            x = self.fc3(x)
+        x = self.conv5(x)
+        x = self.elu(x)
 
-        elif self.method == 1:
-            x = self.conv1(x)
-            x = self.bn1(x)
-            x = self.elu(x)
+        x = self.flat(x)
 
-            x = self.conv2(x)
-            x = self.bn2(x)
-            x = self.elu(x)
+        command = command.view(-1, 1).float()
+        speed = speed.view(-1, 1).float()
+        combined = torch.cat((x, command, speed), dim = 1)
 
-            x = self.conv3(x)
-            x = self.bn3(x)
-            x = self.elu(x)
+        x = self.fc1(combined)
+        x = self.dropout(x)
+        x = self.elu(x)
 
-            x = self.flat(x)
+        x = self.fc2(x)
+        x = self.dropout(x)
+        x = self.elu(x)
 
-            command = command.view(-1, 1).float()
-            speed = speed.view(-1, 1).float()
-            combined = torch.cat((x, command, speed), dim = 1)
+        x = self.fc3(x)
+        x = self.dropout(x)
+        x = self.elu(x)
 
-            x = self.fc1(combined)
-            x = self.elu(x)
-            x = self.dropout(x)
-
-            x = self.fc2(x)
-            x = self.elu(x)
-            x = self.dropout(x)
-            x = self.fc3(x)
-            x = self.elu(x)
-            x = self.fc4(x)
+        x = self.fc4(x)
 
         return x
 
@@ -174,7 +135,6 @@ class DrivingModel(pl.LightningModule):
 
     def training_step(self, train_batch, batch_idx):
         image, command, speed, labels = train_batch
-
 
         outputs = self.forward(image.float(), command.float(), speed.float())
         loss = self.loss_function(outputs, labels)
@@ -189,7 +149,6 @@ class DrivingModel(pl.LightningModule):
     def validation_step(self, train_batch, batch_idx):
         image, command, speed, labels = train_batch
 
-
         outputs = self.forward(image.float(), command.float(), speed.float())
         loss = self.loss_function(outputs, labels)
 
@@ -202,30 +161,29 @@ class DrivingModel(pl.LightningModule):
 
 if __name__ == "__main__":
     location = Path(__file__).resolve().parent
-    data_path = Path('../labels')
+    data_path = Path('../../labels/dave2')
     csv_path = data_path / 'final_annotations.csv'
 
     ddm = DrivingDataModule(str(csv_path))
     ddm.setup()
 
-    #FOR DEBUG
+    # FOR DEBUG
     # count = [0, 0, 0 ,0, 0, 0]
     # for el in ddm.val_dataset:
     #     count[el[1]] += 1
     # print(len(ddm.val_dataset))
     # print(count)
-
+    #
     # print(ddm.train_dataset[0][2])
     # import matplotlib.pyplot as plt
     # image = ddm.train_dataset[0][0]
     # plt.imshow(image.permute(1, 2, 0))
     # plt.show()
 
-    #method = 0 => simple 3xCNN + 3xLinear
-    #method = 1 => more advanced 3xCNN + 4xLinear + Dropout
-    driving_model = DrivingModel(method = 0)
+
+    driving_model = DrivingModel()
 
     from pytorch_lightning.loggers import TensorBoardLogger
-    logger=TensorBoardLogger("../logs", name="agent_basic")
-    trainer=pl.Trainer(logger=logger, max_epochs=150, log_every_n_steps=1, accelerator="gpu")
+    logger=TensorBoardLogger("../../logs", name="agent_dave2")
+    trainer=pl.Trainer(logger=logger, max_epochs=10, log_every_n_steps=1, accelerator="gpu")
     trainer.fit(driving_model, ddm)
