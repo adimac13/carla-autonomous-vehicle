@@ -1,5 +1,4 @@
 #Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
-#TODO fix command_int
 import pandas as pd
 import torch
 import cv2
@@ -104,8 +103,11 @@ class DrivingModel(pl.LightningModule):
 
         x = self.flat(x)
 
-        command = command.view(-1, 1).float()
-        combined = torch.cat((x, command), dim = 1)
+        #One hot encoding to improve car's behavior on crossroads
+        #OHE - version_10,
+        command_ohe = F.one_hot(command.long(), num_classes = 5).float()
+        # command = command.view(-1, 1).float()
+        combined = torch.cat((x, command_ohe), dim = 1)
 
         x = self.fc1(combined)
         x = self.dropout(x)
@@ -133,14 +135,20 @@ class DrivingModel(pl.LightningModule):
 
         outputs = self.forward(image.float(), command.float())
         steer = steer.view(-1, 1).float()
-        loss = self.loss_function(outputs, steer)
+        command = command.view(-1, 1).float()
 
-        self.log('train_loss', loss, on_step= True, on_epoch = True)
+        #Weighted loss to make car obey commands on crossroads
+        # loss = self.loss_function(outputs, steer)
+        loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
+        weights = torch.where(command != 4, 3.0, 1.0)
+        weighted_loss = (loss_per_sample*weights).mean()
+
+        self.log('train_loss', weighted_loss, on_step= True, on_epoch = True)
 
         mae_value = self.train_mae(outputs, steer)
         self.log('train_mae', mae_value, on_epoch=True, on_step= False)
 
-        return loss
+        return weighted_loss
 
     def validation_step(self, train_batch, batch_idx):
         image, command, steer = train_batch
@@ -182,5 +190,5 @@ if __name__ == "__main__":
 
     from pytorch_lightning.loggers import TensorBoardLogger
     logger=TensorBoardLogger("../../logs", name="agent_dave2_const_v_b")
-    trainer=pl.Trainer(logger=logger, max_epochs=10, log_every_n_steps=1, accelerator="gpu")
+    trainer=pl.Trainer(logger=logger, max_epochs=15, log_every_n_steps=1, accelerator="gpu")
     trainer.fit(driving_model, ddm)

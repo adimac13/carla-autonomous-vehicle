@@ -1,3 +1,4 @@
+#Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
 import pandas as pd
 import numpy as np
 
@@ -11,14 +12,18 @@ OUTPUT_CSV = '../../labels/dave2_const_v_s/final_annotations.csv'
 # MAX_SAMPLES_COMMAND4 = 2000
 # MAX_SAMPLES_COMMAND123 = 2100
 
-MAX_SAMPLES_STEER_NEAR_0 = 700
-MAX_SAMPLES_STEER_OTHER = 1000
+NEAR_ZERO_RANGE = 0.15
+MAX_SAMPLES_STEER_NEAR_0 = 9000
+MAX_SAMPLES_STEER_OTHER = 1800
 
-MAX_SAMPLES_COMMAND4 = 3000
-MAX_SAMPLES_COMMAND123 = 3000
+MAX_SAMPLES_COMMAND4 = 7600
+MAX_SAMPLES_COMMAND123 = 7800
 
 def balance_dataset():
     annotations = pd.read_csv(INPUT_CSV)
+    print("BEFORE BALANCE")
+    print(annotations['command'].value_counts().sort_index())
+
     print("BEFORE BALANCE")
     bins = np.arange(-1.0, 1.01, 0.05)
     annotations ['range'] = pd.cut(annotations['steer'], bins = bins)
@@ -26,6 +31,7 @@ def balance_dataset():
 
     balanced_annotations = []
 
+    #Balancing annotations by the value of steer
     for range_id in annotations['range'].unique():
         subset = annotations[annotations['range'] == range_id]
 
@@ -34,7 +40,7 @@ def balance_dataset():
         right = abs(float(range_id.right))
         max_abs_range = np.maximum(left, right)
 
-        if max_abs_range < 0.25:
+        if max_abs_range < NEAR_ZERO_RANGE:
             if count > MAX_SAMPLES_STEER_NEAR_0:
                 subset = subset.sample(n=MAX_SAMPLES_STEER_NEAR_0, random_state=42)
         else:
@@ -48,6 +54,7 @@ def balance_dataset():
 
     new_balanced_annotations = []
 
+    #Balancing new annotations by the value of command
     for command_id in mid_annotations['command'].unique():
         subset = mid_annotations[mid_annotations['command'] == command_id]
         count = len(subset)

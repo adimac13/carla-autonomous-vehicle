@@ -1,3 +1,4 @@
+#Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
 import cv2
 import torch
 from torchvision import transforms
@@ -139,18 +140,23 @@ def world_setup():
 
             image_center = raw_data_process(center_frame)
 
+            #TO GET NAVIGATION
+            control = agent.run_step()
+
+            current_loc = vehicle.get_location()
+            agent.set_destination(destination, start_location=current_loc)
+
             command_int = agent._local_planner.target_road_option
 
             steer = process_frame(image_center, command_int)
 
-            control = carla.VehicleControl()
             control.steer = float(np.clip(steer, -1.0, 1.0))
             control.throttle = 0.15
             control.brake = 0.0
 
             vehicle.apply_control(control)
 
-            print(command_int, control.steer)
+            print(command_int.value, control.steer)
 
 
     finally:
@@ -166,7 +172,7 @@ if __name__ == "__main__":
     #Uplodaing model from .ckpt file
     log_path = Path("../../logs")
     agent_path = Path("agent_dave2_const_v_b")
-    version = 6
+    version = 9
 
     checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
 

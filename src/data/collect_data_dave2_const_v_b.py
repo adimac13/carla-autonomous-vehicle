@@ -1,4 +1,4 @@
-#Model based on NVIDIA's DAVE-2 with constant values of velocity and brake
+#Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
 import carla
 import random
 import queue
