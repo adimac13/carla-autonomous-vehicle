@@ -26,6 +26,7 @@ def process_frame(camera_image, command):
     image_tensor = image_tensor.unsqueeze(0).to(device)
 
     command_tensor = torch.tensor(command, dtype = torch.long).to(device)
+    # command_tensor.unsqueeze(0).to(device)
 
     with torch.no_grad():
         outputs = model(image_tensor, command_tensor)
@@ -151,7 +152,7 @@ def world_setup():
             steer = process_frame(image_center, command_int)
 
             control.steer = float(np.clip(steer, -1.0, 1.0))
-            control.throttle = 0.15
+            control.throttle = 0.18
             control.brake = 0.0
 
             vehicle.apply_control(control)
@@ -172,7 +173,7 @@ if __name__ == "__main__":
     #Uplodaing model from .ckpt file
     log_path = Path("../../logs")
     agent_path = Path("agent_dave2_const_v_b")
-    version = 9
+    version = 13
 
     checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
 
@@ -182,7 +183,7 @@ if __name__ == "__main__":
         raise FileNotFoundError(f"Model not found: {checkpoint_path}")
 
     #Lodaing model to gpu
-    model = DrivingModel.load_from_checkpoint(model_path, method = 0)
+    model = DrivingModel.load_from_checkpoint(model_path, train_flag = False)
     model.eval()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)

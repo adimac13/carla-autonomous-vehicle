@@ -13,11 +13,12 @@ OUTPUT_CSV = '../../labels/dave2_const_v_s/final_annotations.csv'
 # MAX_SAMPLES_COMMAND123 = 2100
 
 NEAR_ZERO_RANGE = 0.15
-MAX_SAMPLES_STEER_NEAR_0 = 9000
-MAX_SAMPLES_STEER_OTHER = 1800
+MAX_SAMPLES_STEER_NEAR_0 = 7000
+MAX_SAMPLES_STEER_OTHER = 2000
 
-MAX_SAMPLES_COMMAND4 = 7600
-MAX_SAMPLES_COMMAND123 = 7800
+MAX_SAMPLES_COMMAND12 = 2100
+MAX_SAMPLES_COMMAND3 = 3500
+MAX_SAMPLES_COMMAND4 = 3000
 
 def balance_dataset():
     annotations = pd.read_csv(INPUT_CSV)
@@ -61,9 +62,12 @@ def balance_dataset():
         if command_id == 4:
             if count > MAX_SAMPLES_COMMAND4:
                 subset = subset.sample(n=MAX_SAMPLES_COMMAND4, random_state=42)
+        elif command_id == 3:
+            if count > MAX_SAMPLES_COMMAND3:
+                subset = subset.sample(n=MAX_SAMPLES_COMMAND3, random_state=42)
         else:
-            if count > MAX_SAMPLES_COMMAND123:
-                subset = subset.sample(n=MAX_SAMPLES_COMMAND123, random_state=42)
+            if count > MAX_SAMPLES_COMMAND12:
+                subset = subset.sample(n=MAX_SAMPLES_COMMAND12, random_state=42)
         new_balanced_annotations.append(subset)
 
     final_df = pd.concat(new_balanced_annotations)

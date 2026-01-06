@@ -55,7 +55,7 @@ from torch import optim
 import torch.nn.functional as F
 
 class DrivingModel(pl.LightningModule):
-    def __init__(self):
+    def __init__(self, train_flag = True):
         super().__init__()
         self.loss_function = nn.MSELoss()
         self.elu = nn.ELU()
@@ -63,6 +63,7 @@ class DrivingModel(pl.LightningModule):
         self.dropout = nn.Dropout(0.2)
         self.train_mae = MeanAbsoluteError()
         self.val_mae = MeanAbsoluteError()
+        self.train_flag = train_flag
 
         self.conv1 = nn.Conv2d(3, 24, kernel_size=5, stride=2, padding=0)
 
@@ -104,8 +105,11 @@ class DrivingModel(pl.LightningModule):
         x = self.flat(x)
 
         #One hot encoding to improve car's behavior on crossroads
-        #OHE - version_10,
+        #OHE - version_10, version_11 (blank), version_12
         command_ohe = F.one_hot(command.long(), num_classes = 5).float()
+        if not self.train_flag:
+            command_ohe = command_ohe.unsqueeze(0).to(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+            # print(command_ohe)
         # command = command.view(-1, 1).float()
         combined = torch.cat((x, command_ohe), dim = 1)
 
@@ -140,7 +144,7 @@ class DrivingModel(pl.LightningModule):
         #Weighted loss to make car obey commands on crossroads
         # loss = self.loss_function(outputs, steer)
         loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
-        weights = torch.where(command != 4, 3.0, 1.0)
+        weights = torch.where(command != 4, 2.0, 1.0)
         weighted_loss = (loss_per_sample*weights).mean()
 
         self.log('train_loss', weighted_loss, on_step= True, on_epoch = True)
