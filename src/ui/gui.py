@@ -1,147 +1,244 @@
+#TODO Add better layout for GUI
 import customtkinter as ctk
 import carla
 import threading
-import random
 import queue
+from pathlib import Path
+import torch
+from torchvision import transforms
 
-TOTAL_SPAWN_POINTS = 80
+from src.models.model_dave2_const_v_b import DrivingModel
+from src.data.collect_data_dave2_const_v_b import IMAGE_WIDTH, IMAGE_HEIGHT, FOV, raw_data_process
+from src.driving.load_model_dave2_const_v_b_to_carla import process_frame
+from agents.navigation.behavior_agent import BehaviorAgent
+import numpy as np
+
+TOTAL_SPAWN_POINTS = 101
 SLIDER_WIDTH = 700
 
 class CarlaControlPanel(ctk.CTk):
     def __init__(self):
         super().__init__()
         font_name = "TimesNewRoman"
-
         self.carla_running = False
-        self.spawn_point = True
-        self.spawn_point_change = True
-        self.dest_point = False
+        self.spawn_point_draw = True
+        self.dest_point_draw = True
+        self.spawn_car = False
+        self.first_frame = True
+        self.nn_car = False
 
-        #Window config
         self.geometry("800x700")
         self.title("Carla control panel")
-        self.resizable(False, False)
 
-        #Title
-        self.label_title = ctk.CTkLabel(self, text="Route Configuration in CARLA", font = (font_name, 20, "bold"))
+        self.grid_rowconfigure(0, weight = 1)
+        self.grid_columnconfigure(0, weight = 0)
+        self.grid_columnconfigure(1, weight = 1)
+
+        self.label_title = ctk.CTkLabel(self, text="Route Configuration in CARLA", font=(font_name, 20, "bold"))
         self.label_title.pack(pady=20)
 
-        #Config for slider
-        self.label_slider_spawn = ctk.CTkLabel(self, text = "Spawn point ID: 0 ", font = (font_name, 15, "bold"))
-        self.label_slider_spawn.pack(pady = 10)
+        self.label_slider_spawn = ctk.CTkLabel(self, text="Spawn point ID: 0 ", font=(font_name, 15, "bold"))
+        self.label_slider_spawn.pack(pady=10)
 
-        #Spawn slider for spawn points with button
-        self.spawn_slider= ctk.CTkSlider(master = self, from_ = 0, to = TOTAL_SPAWN_POINTS, number_of_steps=TOTAL_SPAWN_POINTS, command = self.spawn_slider_update_value, width = SLIDER_WIDTH)
+        self.spawn_slider = ctk.CTkSlider(master=self, from_=0, to=TOTAL_SPAWN_POINTS,
+                                          number_of_steps=TOTAL_SPAWN_POINTS, command=self.spawn_slider_update_value,
+                                          width=SLIDER_WIDTH)
         self.spawn_slider.set(0)
-        self.spawn_slider.pack(pady = 10)
-        self.spawn_slider_control = ctk.CTkFrame(self)
-        self.spawn_slider_control.pack(pady=20)
-        self.button_spawn = ctk.CTkButton(self.spawn_slider_control, text="SET SPAWN POINT", fg_color="PURPLE", command = self.spawn_car)
-        self.button_spawn.pack(pady=0)
+        self.spawn_slider.pack(pady=10)
         self.spawn_point_id = 0
 
+        self.label_slider_dest = ctk.CTkLabel(self, text="Destination point ID: 0 ", font=(font_name, 15, "bold"))
+        self.label_slider_dest.pack(pady=10)
 
-        #Config for slider
-        self.label_slider_dest = ctk.CTkLabel(self, text = "Destination point ID: 0 ", font = (font_name, 15, "bold"))
-        self.label_slider_dest.pack(pady = 10)
-
-        #Spawn slider for destination points with button
-        self.dest_slider = ctk.CTkSlider(master = self, from_ = 0, to = TOTAL_SPAWN_POINTS, number_of_steps=TOTAL_SPAWN_POINTS, command = self.dest_slider_update_value, width = SLIDER_WIDTH)
+        self.dest_slider = ctk.CTkSlider(master=self, from_=0, to=TOTAL_SPAWN_POINTS,
+                                         number_of_steps=TOTAL_SPAWN_POINTS, command=self.dest_slider_update_value,
+                                         width=SLIDER_WIDTH)
         self.dest_slider.set(0)
-        self.dest_slider.pack(pady = 10)
-        self.dest_slider_control = ctk.CTkFrame(self)
-        self.dest_slider_control.pack(pady=20)
-        self.button_set_dest = ctk.CTkButton(self.dest_slider_control, text="SET DESTINATION", fg_color="PURPLE")
-        self.button_set_dest.pack(pady=0)
+        self.dest_slider.pack(pady=10)
+        self.dest_point_id = 0
 
-
-        #Config for buttons
         self.frame_controls = ctk.CTkFrame(self)
-        self.frame_controls.pack(pady=40, padx=20)
+        self.frame_controls.pack(pady=40)
 
-        #Start button
-        self.button_start = ctk.CTkButton(self.frame_controls, text="START A CAR", fg_color="green")
+        self.button_start = ctk.CTkButton(self.frame_controls, text="START A CAR", fg_color="green",command=self.start_car)
         self.button_start.pack(pady=10)
 
-        #Stop button
-        self.button_stop = ctk.CTkButton(self.frame_controls, text="STOP A CAR",  fg_color="red")
+        self.button_stop = ctk.CTkButton(self.frame_controls, text="STOP A CAR", fg_color="red")
         self.button_stop.pack(pady=10)
 
-        #Turn on sim button
-        self.button_sim = ctk.CTkButton(self.frame_controls, text="START CARLA",  fg_color="blue", command = self.start_simulation)
-        self.button_sim.pack(pady=10)
+        self.button_sim_on = ctk.CTkButton(self.frame_controls, text="START CARLA", fg_color="blue",command=self.start_simulation)
+        self.button_sim_on.pack(pady=10)
+
+        self.button_sim_off = ctk.CTkButton(self.frame_controls, text="STOP CARLA", fg_color="blue",command=self.stop_simulation)
+        self.button_sim_off.pack(pady=10)
 
     def spawn_slider_update_value(self, value):
-        self.label_slider_spawn.configure(text = f"Spawn point ID: {int(value)}")
+        self.label_slider_spawn.configure(text=f"Spawn point ID: {int(value)}")
         self.spawn_point_id = int(value)
-        self.spawn_point_change = True
+        self.spawn_point_draw = True
 
     def dest_slider_update_value(self, value):
-        self.label_slider_dest.configure(text = f"Destination point ID: {int(value)}")
+        self.label_slider_dest.configure(text=f"Destination point ID: {int(value)}")
+        self.dest_point_id = int(value)
+        self.dest_point_draw = True
 
     def start_simulation(self):
         if not self.carla_running:
             self.carla_running = True
-            t = threading.Thread(target = self.carla_thread, daemon = True)
-            t.start()
+            self.t = threading.Thread(target=self.carla_thread, daemon=True)
+            self.t.start()
 
-    def spawn_car(self):
-        self.spawn_point = True
+    def stop_simulation(self):
+        self.carla_running = False
 
-    def carla_thread(self, model_nn = "dave2_const_v_b"):
-        actor_list = []
+    def start_car(self):
+        self.spawn_point_draw = False
+        self.dest_point_draw = False
+        self.nn_car = True
+
+    def carla_thread(self, model_nn="dave2_const_v_b"):
+        self.actor_list = []
         try:
-            client = carla.Client('localhost', 2000)
-            client.set_timeout(10.0)
+            self.setup_carla_world()
 
-            #CONNECTING TO WORLD
-            self.world = client.load_world('Town02')
-            settings = self.world.get_settings()
-            spectator = self.world.get_spectator()
-            spectator.set_transform(carla.Transform(carla.Location(x=100, y=204, z=203.0),
-                                                    carla.Rotation(pitch=-90.0, yaw=0.0, roll=0.0)))
-
-            #APPLYING SYNCHRONOUS MODE
-            settings.synchronous_mode = True
-            settings.fixed_delta_seconds = 0.05
-            self.world.apply_settings(settings)
-
-            blueprint_library =  self.world.get_blueprint_library()
-            model_3 = blueprint_library.filter("model3")[0]
-
-            #CONFIGURING SPAWN POINTS
-            self.all_spawn_points =  self.world.get_map().get_spawn_points()
-
+            self.frame_number = 0
             while self.carla_running:
                 self.world.tick()
-               #Drawing spawn point
-                if self.spawn_point:
-                    self.draw_spawn_point()
-
-
-
+                if self.nn_car:
+                    self.car_drive(model_nn)
+                else:
+                    if self.spawn_point_draw:
+                        self.draw_spawn_point()
+                    if self.dest_point_draw:
+                        self.draw_dest_point()
         finally:
-            settings =  self.world.get_settings()
-            settings.synchronous_mode = False
-            settings.fixed_delta_seconds = None
-            self.world.apply_settings(settings)
-            for actor in actor_list:
-                actor.destroy()
+            self.cleanup_carla()
+
+    def setup_carla_world(self):
+        client = carla.Client('localhost', 2000)
+        client.set_timeout(10.0)
+        self.world = client.load_world('Town02')
+        settings = self.world.get_settings()
+        spectator = self.world.get_spectator()
+        spectator.set_transform(carla.Transform(carla.Location(x=100, y=204, z=203.0),carla.Rotation(pitch=-90.0, yaw=0.0, roll=0.0)))
+        settings.synchronous_mode = True
+        settings.fixed_delta_seconds = 0.05
+        self.world.apply_settings(settings)
+        self.blueprint_library = self.world.get_blueprint_library()
+        self.model_3 = self.blueprint_library.filter("model3")[0]
+        self.all_spawn_points = self.world.get_map().get_spawn_points()
+        print(len(self.all_spawn_points))
+
+    def cleanup_carla(self):
+        settings = self.world.get_settings()
+        settings.synchronous_mode = False
+        settings.fixed_delta_seconds = None
+        self.world.apply_settings(settings)
+        for actor in self.actor_list:
+            actor.destroy()
 
     def draw_spawn_point(self):
-        loc = self.all_spawn_points[int(self.spawn_point_id)].location
-        if self.spawn_point_change:
-            loc.z += 1
-            self.spawn_point_change = False
-        self.world.debug.draw_string(
-            loc,
-            'Spawn point',
-            color=carla.Color(r=255, g=0, b=0),
-            life_time=0.1,
-        )
+        loc_raw = self.all_spawn_points[int(self.spawn_point_id)].location
+        self.start_location = carla.Location(loc_raw)
+        loc = carla.Location(loc_raw)
+        loc.z += 1
+        self.world.debug.draw_string(loc, 'Spawn point', color=carla.Color(r=255, g=0, b=0), life_time=0.1)
+
+    def draw_dest_point(self):
+        loc_raw = self.all_spawn_points[int(self.dest_point_id)].location
+        self.destination = carla.Location(loc_raw)
+        loc = carla.Location(loc_raw)
+        loc.z += 1
+        self.world.debug.draw_string(loc, 'Destination', color=carla.Color(r=255, g=0, b=0), life_time=0.1)
+
+    def car_drive(self, model_nn):
+        if self.first_frame:
+            self.setup_first_frame(model_nn)
+        if model_nn == "dave2_const_v_b":
+            self.execute_dave2_const_v_b()
+
+    def setup_first_frame(self, model_nn):
+        self.first_frame = False
+        self.vehicle = self.world.spawn_actor(self.model_3, self.all_spawn_points[int(self.spawn_point_id)])
+        self.actor_list.append(self.vehicle)
+
+        if model_nn == "dave2_const_v_b":
+            self.setup_dave2_sensor()
+
+        log_path = Path("../../logs")
+        agent_path = Path("agent_dave2_const_v_b")
+        version = 16
+        checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
+        model_path = next(checkpoint_path.glob("*ckpt"))
+
+        self.model = DrivingModel.load_from_checkpoint(model_path, train_flag=False, version=version)
+        self.model.eval()
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model.to(self.device)
+        self.transform = transforms.Compose([transforms.ToPILImage(), transforms.Resize((66, 200)), transforms.ToTensor()])
+
+        self.agent = BehaviorAgent(self.vehicle, behavior='cautious')
+        self.agent.ignore_traffic_lights(active=True)
+        self.agent.ignore_stop_signs(active=True)
+        self.agent.ignore_vehicles(active=True)
+        self.agent.set_destination(self.destination, start_location=self.start_location)
+
+        for _ in range(20):
+            self.world.tick()
+
+    def setup_dave2_sensor(self):
+        rgb_bp = self.blueprint_library.find("sensor.camera.rgb")
+        rgb_bp.set_attribute('image_size_x', f"{IMAGE_WIDTH}")
+        rgb_bp.set_attribute('image_size_y', f"{IMAGE_HEIGHT}")
+        rgb_bp.set_attribute('fov', f"{FOV}")
+        camera_center_transform = carla.Transform(carla.Location(x=1.0, z=1.5))
+        self.center_sensor = self.world.spawn_actor(rgb_bp, camera_center_transform, attach_to=self.vehicle)
+        self.actor_list.append(self.center_sensor)
+        self.center_queue = queue.Queue()
+        self.center_sensor.listen(self.center_queue.put)
+
+    def execute_dave2_const_v_b(self):
+        try:
+            center_frame = self.center_queue.get(True, 2.0)
+        except queue.Empty:
+            return
+
+        self.agent._update_information()
+        self.draw_route()
+
+        if self.agent.done():
+            print("DESTINATION REACHED")
+
+        image_center = raw_data_process(center_frame)
+        control = self.agent.run_step()
+        current_loc = self.vehicle.get_location()
+        command_int = self.agent._local_planner.target_road_option
+
+        steer = process_frame(image_center, command_int, self.transform, self.model, self.device)
+
+        if command_int == 4:
+            self.agent.set_destination(self.destination, start_location=current_loc)
+        else:
+            self.frame_number += 1
+            if self.frame_number > 300 and abs(steer) < 0.05:
+                self.frame_number = 0
+                self.agent.set_destination(self.destination, start_location=current_loc)
+
+        control.steer = float(np.clip(steer, -1.0, 1.0))
+        control.throttle = 0.15
+        control.brake = 0.0
+        self.vehicle.apply_control(control)
+
+    def draw_route(self):
+        route_queue = self.agent._local_planner._waypoints_queue
+        if len(route_queue) > 0:
+            for i, (waypoint, _) in enumerate(route_queue):
+                if i > len(route_queue) - 1: break
+                loc = waypoint.transform.location
+                loc.z += 1.0
+                self.world.debug.draw_string(loc, 'O', draw_shadow=False, color=carla.Color(r=0, g=255, b=0),life_time=0.1)
+
 
 if __name__ == "__main__":
     app = CarlaControlPanel()
     app.mainloop()
-
-

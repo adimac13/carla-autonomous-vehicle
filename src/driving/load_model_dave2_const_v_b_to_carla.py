@@ -21,7 +21,7 @@ from agents.navigation.local_planner import RoadOption
 from carla import ColorConverter as cc
 
 
-def process_frame(camera_image, command):
+def process_frame(camera_image, command, transform, model, device):
     camera_image = cv2.cvtColor(camera_image, cv2.COLOR_BGR2YUV)
     image_tensor = transform(camera_image)
     image_tensor = image_tensor.unsqueeze(0).to(device)
@@ -149,7 +149,7 @@ def world_setup():
 
             command_int = agent._local_planner.target_road_option
 
-            steer = process_frame(image_center, command_int)
+            steer = process_frame(image_center, command_int, transform, model, device)
 
             if command_int == 4:
                 agent.set_destination(destination, start_location=current_loc)
