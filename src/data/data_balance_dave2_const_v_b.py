@@ -1,4 +1,5 @@
 #Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
+#TODO Change data - harsher steer on imageX_right
 import pandas as pd
 import numpy as np
 
@@ -21,12 +22,12 @@ OUTPUT_CSV = '../../labels/dave2_const_v_s/final_annotations.csv'
 # 4    3500
 
 NEAR_ZERO_RANGE = 0.15
-MAX_SAMPLES_STEER_NEAR_0 = 2500
-MAX_SAMPLES_STEER_OTHER = 3000
+MAX_SAMPLES_STEER_NEAR_0 = 3000
+MAX_SAMPLES_STEER_OTHER = 3600
 
-MAX_SAMPLES_COMMAND12 = 2800
-MAX_SAMPLES_COMMAND3 = 3500
-MAX_SAMPLES_COMMAND4 = 3500
+MAX_SAMPLES_COMMAND12 = 4000
+MAX_SAMPLES_COMMAND3 = 5500
+MAX_SAMPLES_COMMAND4 = 7800
 
 def balance_dataset():
     annotations = pd.read_csv(INPUT_CSV)

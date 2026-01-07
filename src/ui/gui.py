@@ -5,6 +5,7 @@ import threading
 import queue
 from pathlib import Path
 import torch
+from pandas.io.sas.sas_constants import column_label_length_offset
 from torchvision import transforms
 
 from src.models.model_dave2_const_v_b import DrivingModel
@@ -30,47 +31,67 @@ class CarlaControlPanel(ctk.CTk):
         self.geometry("800x700")
         self.title("Carla control panel")
 
-        self.grid_rowconfigure(0, weight = 1)
-        self.grid_columnconfigure(0, weight = 0)
-        self.grid_columnconfigure(1, weight = 1)
+        self.grid_rowconfigure((0, 1, 2, 3, 4, 5), weight=1)
+        self.grid_columnconfigure((0, 1), weight=1)
 
-        self.label_title = ctk.CTkLabel(self, text="Route Configuration in CARLA", font=(font_name, 20, "bold"))
-        self.label_title.pack(pady=20)
+        #Label for title
+        self.label_title_frame = ctk.CTkFrame(self)
+        self.label_title_frame.grid(row=0, column=0, columnspan=2, sticky="n")
+        self.label_title = ctk.CTkLabel(self.label_title_frame, text="Route Configuration in CARLA",
+                                        font=(font_name, 20, "bold"))
+        self.label_title.pack(pady=0)
 
+        #Label for slider
         self.label_slider_spawn = ctk.CTkLabel(self, text="Spawn point ID: 0 ", font=(font_name, 15, "bold"))
-        self.label_slider_spawn.pack(pady=10)
+        self.label_slider_spawn.grid(row=1, column=0, columnspan=2, sticky="ns" )
 
-        self.spawn_slider = ctk.CTkSlider(master=self, from_=0, to=TOTAL_SPAWN_POINTS,
+        #Slider
+        self.spawn_slider = ctk.CTkSlider(self, from_=0, to=TOTAL_SPAWN_POINTS,
                                           number_of_steps=TOTAL_SPAWN_POINTS, command=self.spawn_slider_update_value,
                                           width=SLIDER_WIDTH)
         self.spawn_slider.set(0)
-        self.spawn_slider.pack(pady=10)
-        self.spawn_point_id = 0
+        self.spawn_slider.grid(row=2, column=0, columnspan=2, sticky="n")
 
+        #Label for slider
         self.label_slider_dest = ctk.CTkLabel(self, text="Destination point ID: 0 ", font=(font_name, 15, "bold"))
-        self.label_slider_dest.pack(pady=10)
+        self.label_slider_dest.grid(row=3, column=0, columnspan=2, sticky="ns")
 
-        self.dest_slider = ctk.CTkSlider(master=self, from_=0, to=TOTAL_SPAWN_POINTS,
+        self.dest_slider = ctk.CTkSlider(self, from_=0, to=TOTAL_SPAWN_POINTS,
                                          number_of_steps=TOTAL_SPAWN_POINTS, command=self.dest_slider_update_value,
                                          width=SLIDER_WIDTH)
         self.dest_slider.set(0)
-        self.dest_slider.pack(pady=10)
-        self.dest_point_id = 0
+        self.dest_slider.grid(row=4, column=0, columnspan=2, sticky="n")
 
-        self.frame_controls = ctk.CTkFrame(self)
-        self.frame_controls.pack(pady=40)
+        #Buttons split into two columns
+        self.frame_left = ctk.CTkFrame(self)
+        self.frame_left.grid(row=5, column=0, sticky="n")
 
-        self.button_start = ctk.CTkButton(self.frame_controls, text="START A CAR", fg_color="green",command=self.start_car)
-        self.button_start.pack(pady=10)
+        self.frame_right = ctk.CTkFrame(self)
+        self.frame_right.grid(row=5, column=1, sticky="n")
 
-        self.button_stop = ctk.CTkButton(self.frame_controls, text="STOP A CAR", fg_color="red")
-        self.button_stop.pack(pady=10)
+        #Buttons on left for environment
+        self.label_left_column = ctk.CTkLabel(self.frame_left, text="Environment", font=(font_name, 15, "bold"))
+        self.label_left_column.pack(pady=10)
 
-        self.button_sim_on = ctk.CTkButton(self.frame_controls, text="START CARLA", fg_color="blue",command=self.start_simulation)
+        self.button_sim_on = ctk.CTkButton(self.frame_left, text="Set up environment", fg_color="blue", command=self.start_simulation,
+                                           font=(font_name, 15, "bold"))
         self.button_sim_on.pack(pady=10)
 
-        self.button_sim_off = ctk.CTkButton(self.frame_controls, text="STOP CARLA", fg_color="blue",command=self.stop_simulation)
+        self.button_sim_off = ctk.CTkButton(self.frame_left, text="Destroy", fg_color="blue", command=self.stop_simulation
+                                            , font=(font_name, 15, "bold"))
         self.button_sim_off.pack(pady=10)
+
+        #Buttons on right for car
+        self.label_right_column = ctk.CTkLabel(self.frame_right, text="Car", font=(font_name, 15, "bold"))
+        self.label_right_column.pack(pady=10)
+
+        self.button_start = ctk.CTkButton(self.frame_right, text="Spawn a car", fg_color="green", command=self.start_car
+                                          , font=(font_name, 15, "bold"))
+        self.button_start.pack(pady=10)
+
+        self.button_stop = ctk.CTkButton(self.frame_right, text="Stop a car", fg_color="red"
+                                         , font=(font_name, 15, "bold"))
+        self.button_stop.pack(pady=10)
 
     def spawn_slider_update_value(self, value):
         self.label_slider_spawn.configure(text=f"Spawn point ID: {int(value)}")

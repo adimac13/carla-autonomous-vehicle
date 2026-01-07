@@ -187,7 +187,7 @@ if __name__ == "__main__":
     #version_9 the best by far
     #version_15 the only model which obey commands on crossroads
     #version_16 the best by far - sometimes too close to right side
-    version = 16
+    version = 17
 
     checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
 

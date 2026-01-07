@@ -106,7 +106,7 @@ class DrivingModel(pl.LightningModule):
         x = self.flat(x)
 
         #One hot encoding to improve car's behavior on crossroads
-        ohe_version = {10,11,12,13,14,15,16}
+        ohe_version = {10,11,12,13,14,15,16,17}
         if self.version in ohe_version:
             command_ohe = F.one_hot(command.long(), num_classes = 5).float()
             if not self.train_flag:
