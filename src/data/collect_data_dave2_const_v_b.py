@@ -144,18 +144,18 @@ def main():
                                                 carla.Rotation(pitch = -90.0, yaw = 0.0, roll = 0.0)))
 
         #CATALOG PREPARATION
-        image_dir = output_dir / 'images'
-        # print(f"Saving to {str(image_dir)}")
-
-        #Deletes images if necessary
-        if image_dir.exists():
-            shutil.rmtree(image_dir)
-        image_dir.mkdir(parents = True, exist_ok = True)
-
-        data_dir = output_dir / 'annotations.csv'
-        csv_file = open(str(data_dir), 'w', newline='')
-        writer = csv.writer(csv_file)
-        writer.writerow(['image', 'steer', 'throttle', 'brake', 'command', 'speed'])
+        # image_dir = output_dir / 'images'
+        # # print(f"Saving to {str(image_dir)}")
+        #
+        # #Deletes images if necessary
+        # if image_dir.exists():
+        #     shutil.rmtree(image_dir)
+        # image_dir.mkdir(parents = True, exist_ok = True)
+        #
+        # data_dir = output_dir / 'annotations.csv'
+        # csv_file = open(str(data_dir), 'w', newline='')
+        # writer = csv.writer(csv_file)
+        # writer.writerow(['image', 'steer', 'throttle', 'brake', 'command', 'speed'])
 
         frame_number = 0
         simulation_step = 0
@@ -210,16 +210,17 @@ def main():
             v = vehicle.get_velocity()
             v = 3.6 * np.sqrt(v.x**2 + v.y**2 + v.z**2)
             command_int = agent._local_planner.target_road_option
+            print(command_int)
 
             #If car goes straight save 1 in 5 images
             if command_int == 4:
-                if command4_step % 6 == 0:
-                    save_data(image_dir, writer, frame_number, image_left, image_center, image_right, control, command_int, v)
+                # if command4_step % 6 == 0:
+                    # save_data(image_dir, writer, frame_number, image_left, image_center, image_right, control, command_int, v)
                 command4_step += 1
                 frame_number += 1
 
             else:
-                save_data(image_dir, writer, frame_number, image_left,image_center, image_right, control, command_int, v)
+                # save_data(image_dir, writer, frame_number, image_left,image_center, image_right, control, command_int, v)
                 frame_number += 1
 
 
@@ -245,7 +246,7 @@ def main():
         for actor in actor_list:
             actor.destroy()
         cv2.destroyAllWindows()
-        csv_file.close()
+        # csv_file.close()
         print("SUCCESSFULLY EXECUTED")
 
 

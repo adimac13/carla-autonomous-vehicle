@@ -55,15 +55,16 @@ from torch import optim
 import torch.nn.functional as F
 
 class DrivingModel(pl.LightningModule):
-    def __init__(self, train_flag = True):
+    def __init__(self, train_flag = True, version = 14):
         super().__init__()
         self.loss_function = nn.MSELoss()
         self.elu = nn.ELU()
         self.flat = nn.Flatten()
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout(0.35)
         self.train_mae = MeanAbsoluteError()
         self.val_mae = MeanAbsoluteError()
         self.train_flag = train_flag
+        self.version = version
 
         self.conv1 = nn.Conv2d(3, 24, kernel_size=5, stride=2, padding=0)
 
@@ -105,13 +106,16 @@ class DrivingModel(pl.LightningModule):
         x = self.flat(x)
 
         #One hot encoding to improve car's behavior on crossroads
-        #OHE - version_10, version_11 (blank), version_12
-        command_ohe = F.one_hot(command.long(), num_classes = 5).float()
-        if not self.train_flag:
-            command_ohe = command_ohe.unsqueeze(0).to(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
-            # print(command_ohe)
-        # command = command.view(-1, 1).float()
-        combined = torch.cat((x, command_ohe), dim = 1)
+        ohe_version = {10,11,12,13,14,15,16}
+        if self.version in ohe_version:
+            command_ohe = F.one_hot(command.long(), num_classes = 5).float()
+            if not self.train_flag:
+                command_ohe = command_ohe.unsqueeze(0).to(torch.device('cuda' if torch.cuda.is_available() else 'cpu'))
+                # print(command_ohe)
+            combined = torch.cat((x, command_ohe), dim = 1)
+        else:
+            command = command.view(-1, 1).float()
+            combined = torch.cat((x, command), dim = 1)
 
         x = self.fc1(combined)
         x = self.dropout(x)
@@ -142,17 +146,17 @@ class DrivingModel(pl.LightningModule):
         command = command.view(-1, 1).float()
 
         #Weighted loss to make car obey commands on crossroads
-        # loss = self.loss_function(outputs, steer)
-        loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
-        weights = torch.where(command != 4, 2.0, 1.0)
-        weighted_loss = (loss_per_sample*weights).mean()
+        loss = self.loss_function(outputs, steer)
+        # loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
+        # weights = torch.where(command != 4, 2.0, 1.0)
+        # weighted_loss = (loss_per_sample*weights).mean()
 
-        self.log('train_loss', weighted_loss, on_step= True, on_epoch = True)
+        self.log('train_loss', loss, on_step= True, on_epoch = True)
 
         mae_value = self.train_mae(outputs, steer)
         self.log('train_mae', mae_value, on_epoch=True, on_step= False)
 
-        return weighted_loss
+        return loss
 
     def validation_step(self, train_batch, batch_idx):
         image, command, steer = train_batch
@@ -194,5 +198,5 @@ if __name__ == "__main__":
 
     from pytorch_lightning.loggers import TensorBoardLogger
     logger=TensorBoardLogger("../../logs", name="agent_dave2_const_v_b")
-    trainer=pl.Trainer(logger=logger, max_epochs=15, log_every_n_steps=1, accelerator="gpu")
+    trainer=pl.Trainer(logger=logger, max_epochs=35, log_every_n_steps=1, accelerator="gpu")
     trainer.fit(driving_model, ddm)

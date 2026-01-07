@@ -1,4 +1,5 @@
 #Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
+#TODO set more harsh steer in imageX_right, change weight for 1.2 (?)
 import cv2
 import torch
 from torchvision import transforms
@@ -145,14 +146,23 @@ def world_setup():
             control = agent.run_step()
 
             current_loc = vehicle.get_location()
-            agent.set_destination(destination, start_location=current_loc)
 
             command_int = agent._local_planner.target_road_option
 
             steer = process_frame(image_center, command_int)
 
+            if command_int == 4:
+                agent.set_destination(destination, start_location=current_loc)
+            else:
+                frame_number += 1
+                if frame_number > 300 and abs(steer) < 0.05:
+                    frame_number = 0
+                    agent.set_destination(destination, start_location=current_loc)
+
+
+
             control.steer = float(np.clip(steer, -1.0, 1.0))
-            control.throttle = 0.18
+            control.throttle = 0.15
             control.brake = 0.0
 
             vehicle.apply_control(control)
@@ -173,7 +183,11 @@ if __name__ == "__main__":
     #Uplodaing model from .ckpt file
     log_path = Path("../../logs")
     agent_path = Path("agent_dave2_const_v_b")
-    version = 13
+
+    #version_9 the best by far
+    #version_15 the only model which obey commands on crossroads
+    #version_16 the best by far - sometimes too close to right side
+    version = 16
 
     checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
 
@@ -183,7 +197,7 @@ if __name__ == "__main__":
         raise FileNotFoundError(f"Model not found: {checkpoint_path}")
 
     #Lodaing model to gpu
-    model = DrivingModel.load_from_checkpoint(model_path, train_flag = False)
+    model = DrivingModel.load_from_checkpoint(model_path, train_flag = False, version = version)
     model.eval()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
