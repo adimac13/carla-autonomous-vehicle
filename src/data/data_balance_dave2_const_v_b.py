@@ -25,9 +25,9 @@ NEAR_ZERO_RANGE = 0.15
 MAX_SAMPLES_STEER_NEAR_0 = 3000
 MAX_SAMPLES_STEER_OTHER = 2000
 
-MAX_SAMPLES_COMMAND12 = 8000
-MAX_SAMPLES_COMMAND3 = 7000
-MAX_SAMPLES_COMMAND4 = 11000
+MAX_SAMPLES_COMMAND12 = 5000
+MAX_SAMPLES_COMMAND3 = 9000
+MAX_SAMPLES_COMMAND4 = 10000
 
 #New method concentrates on reducing data where steer in range [0,0.1] while following a lane
 #The rest of the data is only limited by the value of MAX_SAMPLES_COMMANDx
@@ -84,7 +84,7 @@ def balance_dataset_method_2():
     print("AFTER BALANCE")
     print(final_df['command'].value_counts().sort_index())
 
-#
+#Simple method
 def balance_dataset_method_1():
     annotations = pd.read_csv(INPUT_CSV)
     print("BEFORE BALANCE")

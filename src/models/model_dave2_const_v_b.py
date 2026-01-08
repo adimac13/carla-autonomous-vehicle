@@ -2,6 +2,7 @@
 import pandas as pd
 import torch
 import cv2
+from pytorch_lightning.callbacks import EarlyStopping, ModelCheckpoint
 from torch.utils.data import Dataset, DataLoader, random_split
 from torchvision import transforms
 import pytorch_lightning as pl
@@ -106,7 +107,7 @@ class DrivingModel(pl.LightningModule):
         x = self.flat(x)
 
         #One hot encoding to improve car's behavior on crossroads
-        ohe_version = {10,11,12,13,14,15,16,17}
+        ohe_version = {10,11,12,13,14,15,16,17,18,19}
         if self.version in ohe_version:
             command_ohe = F.one_hot(command.long(), num_classes = 5).float()
             if not self.train_flag:
@@ -197,6 +198,11 @@ if __name__ == "__main__":
     driving_model = DrivingModel()
 
     from pytorch_lightning.loggers import TensorBoardLogger
+
+    #Callaback to resist overfitting
+    early_stop_callback = EarlyStopping(monitor='val_loss', min_delta = 0.0, patience=3, verbose = True, mode = 'min')
+    checkpoint = ModelCheckpoint(monitor = 'val_mae', save_top_k=1, mode = 'min')
+
     logger=TensorBoardLogger("../../logs", name="agent_dave2_const_v_b")
-    trainer=pl.Trainer(logger=logger, max_epochs=15, log_every_n_steps=1, accelerator="gpu")
+    trainer=pl.Trainer(logger=logger, max_epochs=50, log_every_n_steps=1, accelerator="gpu", callbacks = [early_stop_callback, checkpoint])
     trainer.fit(driving_model, ddm)
