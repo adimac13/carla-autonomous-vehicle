@@ -1,11 +1,9 @@
-#TODO Add better layout for GUI
 import customtkinter as ctk
 import carla
 import threading
 import queue
 from pathlib import Path
 import torch
-from pandas.io.sas.sas_constants import column_label_length_offset
 from torchvision import transforms
 
 from src.models.model_dave2_const_v_b import DrivingModel
@@ -21,12 +19,14 @@ class CarlaControlPanel(ctk.CTk):
     def __init__(self):
         super().__init__()
         font_name = "TimesNewRoman"
-        self.carla_running = False
-        self.spawn_point_draw = True
-        self.dest_point_draw = True
-        self.spawn_car = False
-        self.first_frame = True
-        self.nn_car = False
+        #Flags
+        self.carla_running = False      #Controls the main simulation loop execution
+        self.spawn_point_draw = True    #Controls visualization of the spawn point
+        self.dest_point_draw = True     #Controls visualization of the destination point
+        self.spawn_car = False          #Controls spawning a car
+        self.first_frame = True         #Flag for init in the first frame
+        self.nn_car = False             #Activates neural network driving model
+        self.car_go = False             #Controls vehicle movement
 
         self.geometry("800x700")
         self.title("Carla control panel")
@@ -50,6 +50,7 @@ class CarlaControlPanel(ctk.CTk):
                                           number_of_steps=TOTAL_SPAWN_POINTS, command=self.spawn_slider_update_value,
                                           width=SLIDER_WIDTH)
         self.spawn_slider.set(0)
+        self.spawn_point_id = 0
         self.spawn_slider.grid(row=2, column=0, columnspan=2, sticky="n")
 
         #Label for slider
@@ -60,6 +61,7 @@ class CarlaControlPanel(ctk.CTk):
                                          number_of_steps=TOTAL_SPAWN_POINTS, command=self.dest_slider_update_value,
                                          width=SLIDER_WIDTH)
         self.dest_slider.set(0)
+        self.dest_point_id = 0
         self.dest_slider.grid(row=4, column=0, columnspan=2, sticky="n")
 
         #Buttons split into two columns
@@ -81,17 +83,34 @@ class CarlaControlPanel(ctk.CTk):
                                             , font=(font_name, 15, "bold"))
         self.button_sim_off.pack(pady=10)
 
+        self.label_left_status = ctk.CTkLabel(self.frame_left, text="", font=(font_name, 15, "bold"))
+        self.label_left_status.pack(pady=10)
+
+
         #Buttons on right for car
         self.label_right_column = ctk.CTkLabel(self.frame_right, text="Car", font=(font_name, 15, "bold"))
         self.label_right_column.pack(pady=10)
 
-        self.button_start = ctk.CTkButton(self.frame_right, text="Spawn a car", fg_color="green", command=self.start_car
+        self.button_spawn = ctk.CTkButton(self.frame_right, text="Spawn a car", fg_color="darkgreen", command=self.spawn_car_on_road
                                           , font=(font_name, 15, "bold"))
+        self.button_spawn.pack(pady=10)
+
+        self.button_start = ctk.CTkButton(self.frame_right, text="Start a car", fg_color="green", command = self.start_car
+                                         , font=(font_name, 15, "bold"))
         self.button_start.pack(pady=10)
 
-        self.button_stop = ctk.CTkButton(self.frame_right, text="Stop a car", fg_color="red"
+        self.button_stop = ctk.CTkButton(self.frame_right, text="Stop a car", fg_color="red", command = self.stop_car
                                          , font=(font_name, 15, "bold"))
         self.button_stop.pack(pady=10)
+
+        self.button_delete = ctk.CTkButton(self.frame_right, text="Delete a car", fg_color="darkred"
+                                         , font=(font_name, 15, "bold"))
+        self.button_delete.pack(pady=10)
+
+
+    def set_label_left_status(self, status):
+        self.label_left_status.configure(text=status)
+
 
     def spawn_slider_update_value(self, value):
         self.label_slider_spawn.configure(text=f"Spawn point ID: {int(value)}")
@@ -104,6 +123,7 @@ class CarlaControlPanel(ctk.CTk):
         self.dest_point_draw = True
 
     def start_simulation(self):
+        self.set_label_left_status("In progress...")
         if not self.carla_running:
             self.carla_running = True
             self.t = threading.Thread(target=self.carla_thread, daemon=True)
@@ -111,17 +131,25 @@ class CarlaControlPanel(ctk.CTk):
 
     def stop_simulation(self):
         self.carla_running = False
+        self.set_label_left_status("In progress...")
 
-    def start_car(self):
+    def spawn_car_on_road(self):
         self.spawn_point_draw = False
         self.dest_point_draw = False
         self.nn_car = True
+        self.first_frame = True
+
+    def start_car(self):
+        self.car_go = True
+
+    def stop_car(self):
+        self.car_stop = False
 
     def carla_thread(self, model_nn="dave2_const_v_b"):
         self.actor_list = []
         try:
             self.setup_carla_world()
-
+            self.set_label_left_status("Connected")
             self.frame_number = 0
             while self.carla_running:
                 self.world.tick()
@@ -134,6 +162,7 @@ class CarlaControlPanel(ctk.CTk):
                         self.draw_dest_point()
         finally:
             self.cleanup_carla()
+            self.set_label_left_status("Done")
 
     def setup_carla_world(self):
         client = carla.Client('localhost', 2000)
@@ -157,6 +186,17 @@ class CarlaControlPanel(ctk.CTk):
         self.world.apply_settings(settings)
         for actor in self.actor_list:
             actor.destroy()
+        #Cleaning elements
+        self.vehicle = None
+        self.agent = None
+        self.model = None
+        self.center_queue = None
+        #Cleaning flags
+        self.car_go = False
+        self.nn_car = False
+        self.first_frame = True
+        self.spawn_point_draw = True
+        self.dest_point_draw = True
 
     def draw_spawn_point(self):
         loc_raw = self.all_spawn_points[int(self.spawn_point_id)].location
@@ -175,8 +215,9 @@ class CarlaControlPanel(ctk.CTk):
     def car_drive(self, model_nn):
         if self.first_frame:
             self.setup_first_frame(model_nn)
+
         if model_nn == "dave2_const_v_b":
-            self.execute_dave2_const_v_b()
+                self.execute_dave2_const_v_b()
 
     def setup_first_frame(self, model_nn):
         self.first_frame = False
@@ -227,6 +268,9 @@ class CarlaControlPanel(ctk.CTk):
         self.agent._update_information()
         self.draw_route()
 
+        if not self.car_go:
+            return
+
         if self.agent.done():
             print("DESTINATION REACHED")
 
@@ -256,8 +300,8 @@ class CarlaControlPanel(ctk.CTk):
             for i, (waypoint, _) in enumerate(route_queue):
                 if i > len(route_queue) - 1: break
                 loc = waypoint.transform.location
-                loc.z += 1.0
-                self.world.debug.draw_string(loc, 'O', draw_shadow=False, color=carla.Color(r=0, g=255, b=0),life_time=0.1)
+                loc.z += 0.2
+                self.world.debug.draw_string(loc, 'o', draw_shadow=False, color=carla.Color(r=0, g=255, b=0),life_time=0.1)
 
 
 if __name__ == "__main__":
