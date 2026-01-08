@@ -1,4 +1,5 @@
 #Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
+#TODO Increase weight for command "3"
 import pandas as pd
 import torch
 import cv2
@@ -107,7 +108,7 @@ class DrivingModel(pl.LightningModule):
         x = self.flat(x)
 
         #One hot encoding to improve car's behavior on crossroads
-        ohe_version = {10,11,12,13,14,15,16,17,18,19}
+        ohe_version = {10,11,12,13,14,15,16,17,18,19,20,21}
         if self.version in ohe_version:
             command_ohe = F.one_hot(command.long(), num_classes = 5).float()
             if not self.train_flag:

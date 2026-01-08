@@ -248,7 +248,7 @@ class CarlaControlPanel(ctk.CTk):
 
         log_path = Path("../../logs")
         agent_path = Path("agent_dave2_const_v_b")
-        version = 17
+        version = 21
         checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
         model_path = next(checkpoint_path.glob("*ckpt"))
 

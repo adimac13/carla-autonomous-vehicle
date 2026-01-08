@@ -1,5 +1,5 @@
 #Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
-#TODO Change data - harsher steer on imageX_right
+#TODO Filter command "3" where steer < 0.1
 import pandas as pd
 import numpy as np
 
@@ -8,26 +8,26 @@ OUTPUT_CSV = '../../labels/dave2_const_v_s/final_annotations.csv'
 
 #By far the biggest improvement when
 # NEAR_ZERO_RANGE = 0.15
-# MAX_SAMPLES_STEER_NEAR_0 = 2500
-# MAX_SAMPLES_STEER_OTHER = 3000
+# MAX_SAMPLES_STEER_NEAR_0 = 3000
+# MAX_SAMPLES_STEER_OTHER = 2000
 #
-# MAX_SAMPLES_COMMAND12 = 2800
-# MAX_SAMPLES_COMMAND3 = 3500
-# MAX_SAMPLES_COMMAND4 = 3500
+# MAX_SAMPLES_COMMAND12 = 4400
+# MAX_SAMPLES_COMMAND3 = 9000
+# MAX_SAMPLES_COMMAND4 = 12000
 #
-#Data distribution
-# 1    2800
-# 2    2800
-# 3    2380
-# 4    3500
+# Data distribution
+# 1     4400
+# 2     4400
+# 3     8673
+# 4    12000
 
 NEAR_ZERO_RANGE = 0.15
 MAX_SAMPLES_STEER_NEAR_0 = 3000
 MAX_SAMPLES_STEER_OTHER = 2000
 
-MAX_SAMPLES_COMMAND12 = 5000
+MAX_SAMPLES_COMMAND12 = 4400
 MAX_SAMPLES_COMMAND3 = 9000
-MAX_SAMPLES_COMMAND4 = 10000
+MAX_SAMPLES_COMMAND4 = 12000
 
 #New method concentrates on reducing data where steer in range [0,0.1] while following a lane
 #The rest of the data is only limited by the value of MAX_SAMPLES_COMMANDx
