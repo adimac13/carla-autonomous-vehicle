@@ -4,6 +4,7 @@ import threading
 import queue
 from pathlib import Path
 import torch
+from h5py.h5ds import set_label
 from torchvision import transforms
 
 from src.models.model_dave2_const_v_b import DrivingModel
@@ -27,6 +28,7 @@ class CarlaControlPanel(ctk.CTk):
         self.first_frame = True         #Flag for init in the first frame
         self.nn_car = False             #Activates neural network driving model
         self.car_go = False             #Controls vehicle movement
+        self.reset_flag = False              #Indicates whether to reset
 
         self.geometry("800x700")
         self.title("Carla control panel")
@@ -103,7 +105,7 @@ class CarlaControlPanel(ctk.CTk):
                                          , font=(font_name, 15, "bold"))
         self.button_stop.pack(pady=10)
 
-        self.button_delete = ctk.CTkButton(self.frame_right, text="Delete a car", fg_color="darkred"
+        self.button_delete = ctk.CTkButton(self.frame_right, text="Reset", fg_color="darkred", command = self.reset
                                          , font=(font_name, 15, "bold"))
         self.button_delete.pack(pady=10)
 
@@ -124,6 +126,11 @@ class CarlaControlPanel(ctk.CTk):
 
     def start_simulation(self):
         self.set_label_left_status("In progress...")
+
+        if hasattr(self, 't') and self.t is not None and self.t.is_alive():
+            self.set_label_left_status("CARLA is running")
+            return
+
         if not self.carla_running:
             self.carla_running = True
             self.t = threading.Thread(target=self.carla_thread, daemon=True)
@@ -143,7 +150,28 @@ class CarlaControlPanel(ctk.CTk):
         self.car_go = True
 
     def stop_car(self):
-        self.car_stop = False
+        self.car_go = False
+
+    def reset(self):
+        self.reset_flag = True
+
+    def reset_handle(self):
+        for actor in self.actor_list:
+            if actor.is_alive:
+                actor.destroy()
+        self.actor_list = []
+        #Cleaning elements
+        self.center_queue = None
+        #Cleaning flags
+        self.car_go = False
+        self.nn_car = False
+        self.first_frame = True
+        self.spawn_point_draw = True
+        self.dest_point_draw = True
+        self.spawn_point_id = 0
+        self.dest_point_id = 0
+        self.spawn_slider.set(0)
+        self.dest_slider.set(0)
 
     def carla_thread(self, model_nn="dave2_const_v_b"):
         self.actor_list = []
@@ -153,13 +181,17 @@ class CarlaControlPanel(ctk.CTk):
             self.frame_number = 0
             while self.carla_running:
                 self.world.tick()
-                if self.nn_car:
-                    self.car_drive(model_nn)
+                if not self.reset_flag:
+                    if self.nn_car:
+                        self.car_drive(model_nn)
+                    else:
+                        if self.spawn_point_draw:
+                            self.draw_spawn_point()
+                        if self.dest_point_draw:
+                            self.draw_dest_point()
                 else:
-                    if self.spawn_point_draw:
-                        self.draw_spawn_point()
-                    if self.dest_point_draw:
-                        self.draw_dest_point()
+                    self.reset_handle()
+                    self.reset_flag = False
         finally:
             self.cleanup_carla()
             self.set_label_left_status("Done")
@@ -177,26 +209,13 @@ class CarlaControlPanel(ctk.CTk):
         self.blueprint_library = self.world.get_blueprint_library()
         self.model_3 = self.blueprint_library.filter("model3")[0]
         self.all_spawn_points = self.world.get_map().get_spawn_points()
-        print(len(self.all_spawn_points))
 
     def cleanup_carla(self):
         settings = self.world.get_settings()
         settings.synchronous_mode = False
         settings.fixed_delta_seconds = None
         self.world.apply_settings(settings)
-        for actor in self.actor_list:
-            actor.destroy()
-        #Cleaning elements
-        self.vehicle = None
-        self.agent = None
-        self.model = None
-        self.center_queue = None
-        #Cleaning flags
-        self.car_go = False
-        self.nn_car = False
-        self.first_frame = True
-        self.spawn_point_draw = True
-        self.dest_point_draw = True
+        self.reset_handle()
 
     def draw_spawn_point(self):
         loc_raw = self.all_spawn_points[int(self.spawn_point_id)].location
@@ -229,7 +248,7 @@ class CarlaControlPanel(ctk.CTk):
 
         log_path = Path("../../logs")
         agent_path = Path("agent_dave2_const_v_b")
-        version = 16
+        version = 17
         checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
         model_path = next(checkpoint_path.glob("*ckpt"))
 
@@ -260,6 +279,8 @@ class CarlaControlPanel(ctk.CTk):
         self.center_sensor.listen(self.center_queue.put)
 
     def execute_dave2_const_v_b(self):
+        if self.center_queue is None:
+            return
         try:
             center_frame = self.center_queue.get(True, 2.0)
         except queue.Empty:
@@ -269,6 +290,10 @@ class CarlaControlPanel(ctk.CTk):
         self.draw_route()
 
         if not self.car_go:
+            control = self.agent.run_step()
+            control.throttle = 0.0
+            control.brake = 1.0
+            self.vehicle.apply_control(control)
             return
 
         if self.agent.done():
@@ -285,7 +310,7 @@ class CarlaControlPanel(ctk.CTk):
             self.agent.set_destination(self.destination, start_location=current_loc)
         else:
             self.frame_number += 1
-            if self.frame_number > 300 and abs(steer) < 0.05:
+            if self.frame_number > 400 and abs(steer) < 0.05:
                 self.frame_number = 0
                 self.agent.set_destination(self.destination, start_location=current_loc)
 

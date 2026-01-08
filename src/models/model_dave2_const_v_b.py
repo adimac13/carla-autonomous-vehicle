@@ -198,5 +198,5 @@ if __name__ == "__main__":
 
     from pytorch_lightning.loggers import TensorBoardLogger
     logger=TensorBoardLogger("../../logs", name="agent_dave2_const_v_b")
-    trainer=pl.Trainer(logger=logger, max_epochs=35, log_every_n_steps=1, accelerator="gpu")
+    trainer=pl.Trainer(logger=logger, max_epochs=15, log_every_n_steps=1, accelerator="gpu")
     trainer.fit(driving_model, ddm)
