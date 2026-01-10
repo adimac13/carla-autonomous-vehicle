@@ -13,7 +13,7 @@ from src.driving.load_model_dave2_const_v_b_to_carla import process_frame
 from agents.navigation.behavior_agent import BehaviorAgent
 import numpy as np
 
-TOTAL_SPAWN_POINTS = 101
+TOTAL_SPAWN_POINTS = 100
 SLIDER_WIDTH = 700
 
 class CarlaControlPanel(ctk.CTk):
@@ -28,7 +28,7 @@ class CarlaControlPanel(ctk.CTk):
         self.first_frame = True         #Flag for init in the first frame
         self.nn_car = False             #Activates neural network driving model
         self.car_go = False             #Controls vehicle movement
-        self.reset_flag = False              #Indicates whether to reset
+        self.reset_flag = False         #Indicates whether to reset
 
         self.geometry("800x700")
         self.title("Carla control panel")
@@ -109,10 +109,15 @@ class CarlaControlPanel(ctk.CTk):
                                          , font=(font_name, 15, "bold"))
         self.button_delete.pack(pady=10)
 
+        self.label_right_status = ctk.CTkLabel(self.frame_right, text="", font=(font_name, 15, "bold"))
+        self.label_right_status.pack(pady=10)
+
 
     def set_label_left_status(self, status):
         self.label_left_status.configure(text=status)
 
+    def set_label_right_status(self, status):
+        self.label_right_status.configure(text=status)
 
     def spawn_slider_update_value(self, value):
         self.label_slider_spawn.configure(text=f"Spawn point ID: {int(value)}")
@@ -145,15 +150,19 @@ class CarlaControlPanel(ctk.CTk):
         self.dest_point_draw = False
         self.nn_car = True
         self.first_frame = True
+        self.set_label_right_status("Spawning a car...")
 
     def start_car(self):
         self.car_go = True
+        self.set_label_right_status("Driving")
 
     def stop_car(self):
         self.car_go = False
+        self.set_label_right_status("Stopped")
 
     def reset(self):
         self.reset_flag = True
+        self.set_label_right_status("Reset in progress...")
 
     def reset_handle(self):
         for actor in self.actor_list:
@@ -172,6 +181,7 @@ class CarlaControlPanel(ctk.CTk):
         self.dest_point_id = 0
         self.spawn_slider.set(0)
         self.dest_slider.set(0)
+        self.set_label_right_status("Reset done")
 
     def carla_thread(self, model_nn="dave2_const_v_b"):
         self.actor_list = []
@@ -209,6 +219,10 @@ class CarlaControlPanel(ctk.CTk):
         self.blueprint_library = self.world.get_blueprint_library()
         self.model_3 = self.blueprint_library.filter("model3")[0]
         self.all_spawn_points = self.world.get_map().get_spawn_points()
+        def key_to_sort(spawn_point):
+            location = spawn_point.location
+            return round(location.x) , round(location.y)
+        self.all_spawn_points.sort(key = key_to_sort)
 
     def cleanup_carla(self):
         settings = self.world.get_settings()
@@ -234,6 +248,7 @@ class CarlaControlPanel(ctk.CTk):
     def car_drive(self, model_nn):
         if self.first_frame:
             self.setup_first_frame(model_nn)
+            self.set_label_right_status("Done")
 
         if model_nn == "dave2_const_v_b":
                 self.execute_dave2_const_v_b()
@@ -248,7 +263,7 @@ class CarlaControlPanel(ctk.CTk):
 
         log_path = Path("../../logs")
         agent_path = Path("agent_dave2_const_v_b")
-        version = 21
+        version = 15
         checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
         model_path = next(checkpoint_path.glob("*ckpt"))
 

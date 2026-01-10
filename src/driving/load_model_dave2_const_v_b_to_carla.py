@@ -1,5 +1,4 @@
 #Model based on NVIDIA's DAVE-2 with constant throttle=0.18 and brake=0.0
-#TODO set more harsh steer in imageX_right, change weight for 1.2 (?)
 import cv2
 import torch
 from torchvision import transforms
@@ -188,7 +187,8 @@ if __name__ == "__main__":
     #version_15 the only model which obey commands on crossroads
     #version_18 the best by far - sometimes too close to right side
     #version_19 the best by far but does not always obey on crossroads
-    version = 21
+    #version_23 fine tuned to go straight on crossroads; by far the best
+    version = 28
 
     checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
 

@@ -57,7 +57,7 @@ from torch import optim
 import torch.nn.functional as F
 
 class DrivingModel(pl.LightningModule):
-    def __init__(self, train_flag = True, version = 14, learning_rate = 1e-4):
+    def __init__(self, train_flag = True, version = 14, learning_rate = 1e-4,fine_tune_flag = False):
         super().__init__()
         self.loss_function = nn.MSELoss()
         self.elu = nn.ELU()
@@ -68,6 +68,7 @@ class DrivingModel(pl.LightningModule):
         self.train_flag = train_flag
         self.version = version
         self.learning_rate = learning_rate
+        self.fine_tune_flag = fine_tune_flag
 
         self.conv1 = nn.Conv2d(3, 24, kernel_size=5, stride=2, padding=0)
 
@@ -109,7 +110,7 @@ class DrivingModel(pl.LightningModule):
         x = self.flat(x)
 
         #One hot encoding to improve car's behavior on crossroads
-        ohe_version = {10,11,12,13,14,15,16,17,18,19,20,21,22}
+        ohe_version = {10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30}
         if self.version in ohe_version:
             command_ohe = F.one_hot(command.long(), num_classes = 5).float()
             if not self.train_flag:
@@ -148,11 +149,20 @@ class DrivingModel(pl.LightningModule):
         steer = steer.view(-1, 1).float()
         command = command.view(-1, 1).float()
 
-        #Weighted loss to make car obey commands on crossroads
-        # loss = self.loss_function(outputs, steer)
-        loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
-        weights = torch.where(command != 3, 1.0, 1.3)
-        weighted_loss = (loss_per_sample*weights).mean()
+        first = False
+        if not self.fine_tune_flag:
+            #Weighted loss to make car obey commands on crossroads
+            # loss = self.loss_function(outputs, steer)
+            loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
+            weights = torch.where(command != 3, 1.0, 1.3)
+            weighted_loss = (loss_per_sample*weights).mean()
+        else:
+            loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
+            weights = torch.where(command != 3, 10.0, 1.0)
+            if not first:
+                print("JEDZIEMY")
+                first = True
+            weighted_loss = (loss_per_sample*weights).mean()
 
         self.log('train_loss', weighted_loss, on_step= True, on_epoch = True)
 
