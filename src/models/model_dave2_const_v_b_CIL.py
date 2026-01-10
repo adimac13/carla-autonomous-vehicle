@@ -87,7 +87,7 @@ class DrivingModel(pl.LightningModule):
             for i in range(4)
         ])
 
-    def forward(self, x):
+    def forward(self, x, *args, **kwargs):
         x = self.conv_block(x)
         pred_control = torch.cat([control(x) for control in self.control_branches], dim = 1)
 

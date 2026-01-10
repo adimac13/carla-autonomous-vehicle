@@ -6,8 +6,8 @@ from pathlib import Path
 import torch
 from h5py.h5ds import set_label
 from torchvision import transforms
-
-from src.models.model_dave2_const_v_b import DrivingModel
+from src.models.model_dave2_const_v_b import DrivingModel as dave2_const_v_b_model
+from src.models.model_dave2_const_v_b_CIL import DrivingModel as dave2_const_v_b_CIL_model
 from src.data.collect_data_dave2_const_v_b import IMAGE_WIDTH, IMAGE_HEIGHT, FOV, raw_data_process
 from src.driving.load_model_dave2_const_v_b_to_carla import process_frame
 from agents.navigation.behavior_agent import BehaviorAgent
@@ -183,7 +183,7 @@ class CarlaControlPanel(ctk.CTk):
         self.dest_slider.set(0)
         self.set_label_right_status("Reset done")
 
-    def carla_thread(self, model_nn="dave2_const_v_b"):
+    def carla_thread(self, model_nn="dave2_const_v_b_CIL"):
         self.actor_list = []
         try:
             self.setup_carla_world()
@@ -253,7 +253,7 @@ class CarlaControlPanel(ctk.CTk):
         if model_nn == "dave2_const_v_b":
             self.execute_dave2_const_v_b()
         elif model_nn == "dave2_const_v_b_CIL":
-            self.execute_dave_2_const_v_b_CIL()
+            self.execute_dave2_const_v_b_CIL()
 
     def setup_first_frame(self, model_nn):
         self.first_frame = False
@@ -267,15 +267,16 @@ class CarlaControlPanel(ctk.CTk):
             version = 15
             checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
             model_path = next(checkpoint_path.glob("*ckpt"))
-        elif model_nn == "dave2_const_v_b_CLI":
+            self.model = dave2_const_v_b_model.load_from_checkpoint(model_path, train_flag=False, version=version)
+        elif model_nn == "dave2_const_v_b_CIL":
             self.setup_dave2_sensor()
             log_path = Path("../../logs")
             agent_path = Path("agent_dave2_const_v_b_CIL")
-            version = 1
+            version = 0
             checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
             model_path = next(checkpoint_path.glob("*ckpt"))
+            self.model = dave2_const_v_b_CIL_model.load_from_checkpoint(model_path, train_flag=False, version=version)
 
-        self.model = DrivingModel.load_from_checkpoint(model_path, train_flag=False, version=version)
         self.model.eval()
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model.to(self.device)
@@ -325,7 +326,7 @@ class CarlaControlPanel(ctk.CTk):
         image_center = raw_data_process(center_frame)
         control = self.agent.run_step()
         current_loc = self.vehicle.get_location()
-        command_int = self.agent._local_planner.target_road_option
+        command_int = self.agent._local_planner.targetf_road_option
 
         steer = process_frame(image_center, command_int, self.transform, self.model, self.device)
 
@@ -378,7 +379,7 @@ class CarlaControlPanel(ctk.CTk):
                 self.frame_number = 0
                 self.agent.set_destination(self.destination, start_location=current_loc)
 
-        control.steer = float(np.clip(steer[command_int - 1], -1.0, 1.0))
+        control.steer = float(np.clip(steer, -1.0, 1.0))
         control.throttle = 0.15
         control.brake = 0.0
         self.vehicle.apply_control(control)

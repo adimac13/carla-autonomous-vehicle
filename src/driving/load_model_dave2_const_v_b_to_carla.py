@@ -32,7 +32,10 @@ def process_frame(camera_image, command, transform, model, device):
         outputs = model(image_tensor, command_tensor)
         #Model returns => steer
 
-    steer = outputs.item()
+    if torch.numel(outputs) == 1:
+        steer = outputs.item()
+    else:
+        steer = outputs[0, command_tensor - 1].item()
 
     return steer
 
