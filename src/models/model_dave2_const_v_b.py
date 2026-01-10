@@ -57,7 +57,7 @@ from torch import optim
 import torch.nn.functional as F
 
 class DrivingModel(pl.LightningModule):
-    def __init__(self, train_flag = True, version = 14):
+    def __init__(self, train_flag = True, version = 14, learning_rate = 1e-4):
         super().__init__()
         self.loss_function = nn.MSELoss()
         self.elu = nn.ELU()
@@ -67,6 +67,7 @@ class DrivingModel(pl.LightningModule):
         self.val_mae = MeanAbsoluteError()
         self.train_flag = train_flag
         self.version = version
+        self.learning_rate = learning_rate
 
         self.conv1 = nn.Conv2d(3, 24, kernel_size=5, stride=2, padding=0)
 
@@ -108,7 +109,7 @@ class DrivingModel(pl.LightningModule):
         x = self.flat(x)
 
         #One hot encoding to improve car's behavior on crossroads
-        ohe_version = {10,11,12,13,14,15,16,17,18,19,20,21}
+        ohe_version = {10,11,12,13,14,15,16,17,18,19,20,21,22}
         if self.version in ohe_version:
             command_ohe = F.one_hot(command.long(), num_classes = 5).float()
             if not self.train_flag:
@@ -137,7 +138,7 @@ class DrivingModel(pl.LightningModule):
 
     def configure_optimizers(self):
         # optimizer = optim.SGD(self.parameters(), lr=0.001)
-        optimizer = optim.Adam(self.parameters(), lr=1e-4)
+        optimizer = optim.Adam(self.parameters(), lr=self.learning_rate)
         return optimizer
 
     def training_step(self, train_batch, batch_idx):
@@ -148,17 +149,17 @@ class DrivingModel(pl.LightningModule):
         command = command.view(-1, 1).float()
 
         #Weighted loss to make car obey commands on crossroads
-        loss = self.loss_function(outputs, steer)
-        # loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
-        # weights = torch.where(command != 4, 2.0, 1.0)
-        # weighted_loss = (loss_per_sample*weights).mean()
+        # loss = self.loss_function(outputs, steer)
+        loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
+        weights = torch.where(command != 3, 1.0, 1.3)
+        weighted_loss = (loss_per_sample*weights).mean()
 
-        self.log('train_loss', loss, on_step= True, on_epoch = True)
+        self.log('train_loss', weighted_loss, on_step= True, on_epoch = True)
 
         mae_value = self.train_mae(outputs, steer)
         self.log('train_mae', mae_value, on_epoch=True, on_step= False)
 
-        return loss
+        return weighted_loss
 
     def validation_step(self, train_batch, batch_idx):
         image, command, steer = train_batch
@@ -175,7 +176,6 @@ class DrivingModel(pl.LightningModule):
         return loss
 
 if __name__ == "__main__":
-    location = Path(__file__).resolve().parent
     data_path = Path('../../labels/dave2_const_v_s')
     csv_path = data_path / 'final_annotations.csv'
 
