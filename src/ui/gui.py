@@ -251,7 +251,9 @@ class CarlaControlPanel(ctk.CTk):
             self.set_label_right_status("Done")
 
         if model_nn == "dave2_const_v_b":
-                self.execute_dave2_const_v_b()
+            self.execute_dave2_const_v_b()
+        elif model_nn == "dave2_const_v_b_CIL":
+            self.execute_dave_2_const_v_b_CIL()
 
     def setup_first_frame(self, model_nn):
         self.first_frame = False
@@ -260,12 +262,18 @@ class CarlaControlPanel(ctk.CTk):
 
         if model_nn == "dave2_const_v_b":
             self.setup_dave2_sensor()
-
-        log_path = Path("../../logs")
-        agent_path = Path("agent_dave2_const_v_b")
-        version = 15
-        checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
-        model_path = next(checkpoint_path.glob("*ckpt"))
+            log_path = Path("../../logs")
+            agent_path = Path("agent_dave2_const_v_b")
+            version = 15
+            checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
+            model_path = next(checkpoint_path.glob("*ckpt"))
+        elif model_nn == "dave2_const_v_b_CLI":
+            self.setup_dave2_sensor()
+            log_path = Path("../../logs")
+            agent_path = Path("agent_dave2_const_v_b_CIL")
+            version = 1
+            checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
+            model_path = next(checkpoint_path.glob("*ckpt"))
 
         self.model = DrivingModel.load_from_checkpoint(model_path, train_flag=False, version=version)
         self.model.eval()
@@ -330,6 +338,47 @@ class CarlaControlPanel(ctk.CTk):
                 self.agent.set_destination(self.destination, start_location=current_loc)
 
         control.steer = float(np.clip(steer, -1.0, 1.0))
+        control.throttle = 0.15
+        control.brake = 0.0
+        self.vehicle.apply_control(control)
+
+    def execute_dave2_const_v_b_CIL(self):
+        if self.center_queue is None:
+            return
+        try:
+            center_frame = self.center_queue.get(True, 2.0)
+        except queue.Empty:
+            return
+
+        self.agent._update_information()
+        self.draw_route()
+
+        if not self.car_go:
+            control = self.agent.run_step()
+            control.throttle = 0.0
+            control.brake = 1.0
+            self.vehicle.apply_control(control)
+            return
+
+        if self.agent.done():
+            print("DESTINATION REACHED")
+
+        image_center = raw_data_process(center_frame)
+        control = self.agent.run_step()
+        current_loc = self.vehicle.get_location()
+        command_int = self.agent._local_planner.target_road_option
+
+        steer = process_frame(image_center, command_int, self.transform, self.model, self.device)
+
+        if command_int == 4:
+            self.agent.set_destination(self.destination, start_location=current_loc)
+        else:
+            self.frame_number += 1
+            if self.frame_number > 400 and abs(steer) < 0.05:
+                self.frame_number = 0
+                self.agent.set_destination(self.destination, start_location=current_loc)
+
+        control.steer = float(np.clip(steer[command_int - 1], -1.0, 1.0))
         control.throttle = 0.15
         control.brake = 0.0
         self.vehicle.apply_control(control)

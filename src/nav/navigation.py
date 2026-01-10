@@ -37,18 +37,11 @@ def main():
         map = world.get_map()
         all_spawn_points = map.get_spawn_points()
 
-
         # SETTING SPECTATOR ON THE TOP LOOKING DOWN
         spectator.set_transform(carla.Transform(carla.Location(x=100, y=204, z=203.0),
                                                 carla.Rotation(pitch=-90.0, yaw=0.0, roll=0.0)))
 
-
         waypoint_tuple_list = map.get_topology()
-
-        print(waypoint_tuple_list)
-
-
-
         while True:
             world.tick()
 

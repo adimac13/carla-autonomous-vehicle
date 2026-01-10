@@ -149,7 +149,7 @@ class DrivingModel(pl.LightningModule):
         steer = steer.view(-1, 1).float()
         command = command.view(-1, 1).float()
 
-        first = False
+
         if not self.fine_tune_flag:
             #Weighted loss to make car obey commands on crossroads
             # loss = self.loss_function(outputs, steer)
@@ -159,9 +159,6 @@ class DrivingModel(pl.LightningModule):
         else:
             loss_per_sample = F.mse_loss(outputs, steer, reduction = 'none')
             weights = torch.where(command != 3, 10.0, 1.0)
-            if not first:
-                print("JEDZIEMY")
-                first = True
             weighted_loss = (loss_per_sample*weights).mean()
 
         self.log('train_loss', weighted_loss, on_step= True, on_epoch = True)

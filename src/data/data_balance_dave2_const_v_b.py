@@ -13,7 +13,7 @@ OUTPUT_CSV = '../../labels/dave2_const_v_s/final_annotations.csv'
 # MAX_SAMPLES_COMMAND12 = 4400
 # MAX_SAMPLES_COMMAND3 = 9000
 # MAX_SAMPLES_COMMAND4 = 12000
-#
+
 # Data distribution
 # 1     4400
 # 2     4400
@@ -21,12 +21,12 @@ OUTPUT_CSV = '../../labels/dave2_const_v_s/final_annotations.csv'
 # 4    12000
 
 NEAR_ZERO_RANGE = 0.15
-MAX_SAMPLES_STEER_NEAR_0 = 2300
+MAX_SAMPLES_STEER_NEAR_0 = 2500
 MAX_SAMPLES_STEER_OTHER = 2000
 
-MAX_SAMPLES_COMMAND12 = 4200
-MAX_SAMPLES_COMMAND3 = 9000
-MAX_SAMPLES_COMMAND4 = 12000
+MAX_SAMPLES_COMMAND12 = 7000
+MAX_SAMPLES_COMMAND3 = 7000
+MAX_SAMPLES_COMMAND4 = 10000
 
 #New method concentrates on reducing data where steer in range [0,0.1] while following a lane
 #The rest of the data is only limited by the value of MAX_SAMPLES_COMMANDx
