@@ -34,7 +34,7 @@ class CarlaControlPanel(ctk.CTk):
         self.geometry("800x700")
         self.title("Carla control panel")
 
-        self.grid_rowconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
+        self.grid_rowconfigure((0, 1, 2, 3, 4, 5, 6, 7), weight=1)
         self.grid_columnconfigure((0, 1), weight=1)
 
         #Label for title
@@ -45,7 +45,7 @@ class CarlaControlPanel(ctk.CTk):
         self.label_title.pack(pady=0)
 
         #Label for slider
-        self.label_slider_spawn = ctk.CTkLabel(self, text="Spawn point ID: 0 ", font=(font_name, 15, "bold"))
+        self.label_slider_spawn = ctk.CTkLabel(self, text="Spawn point ID: 0 ", font=(font_name, 15, "bold"), text_color="red")
         self.label_slider_spawn.grid(row=1, column=0, columnspan=2, sticky="ns" )
 
         #Slider
@@ -57,7 +57,7 @@ class CarlaControlPanel(ctk.CTk):
         self.spawn_slider.grid(row=2, column=0, columnspan=2, sticky="n")
 
         #Label for slider
-        self.label_slider_dest = ctk.CTkLabel(self, text="Destination point ID: 0 ", font=(font_name, 15, "bold"))
+        self.label_slider_dest = ctk.CTkLabel(self, text="Destination point ID: 0 ", font=(font_name, 15, "bold"), text_color="lightgreen")
         self.label_slider_dest.grid(row=3, column=0, columnspan=2, sticky="ns")
 
         self.dest_slider = ctk.CTkSlider(self, from_=0, to=TOTAL_SPAWN_POINTS,
@@ -113,6 +113,19 @@ class CarlaControlPanel(ctk.CTk):
         self.label_right_status = ctk.CTkLabel(self.frame_right, text="", font=(font_name, 15, "bold"))
         self.label_right_status.pack(pady=10)
 
+        #Label for combo box
+        self.frame_combo_box = ctk.CTkFrame(self, fg_color="transparent")
+        self.frame_combo_box.grid(row=6, column=0, sticky="s")
+        self.label_combo_box = ctk.CTkLabel(self.frame_combo_box, text="Choose AI model:",
+                                        font=(font_name, 15, "bold"), fg_color="transparent")
+        self.label_combo_box.pack(pady=0)
+
+        #Combo box for model to choose
+        option_list = ["dave2_const_v_b_CIL","dave2_const_v_b"]
+        self.combo_box = ctk.CTkComboBox(self, values = option_list, state = "readonly")
+        self.combo_box.grid(row=7,column = 0, sticky = "n")
+        self.combo_box.set("dave2_const_v_b_CIL")
+
 
     def set_label_left_status(self, status):
         self.label_left_status.configure(text=status)
@@ -139,7 +152,8 @@ class CarlaControlPanel(ctk.CTk):
 
         if not self.carla_running:
             self.carla_running = True
-            self.t = threading.Thread(target=self.carla_thread, daemon=True)
+            model_nn = self.combo_box.get()
+            self.t = threading.Thread(target=self.carla_thread, daemon=True, kwargs = {"model_nn": model_nn})
             self.t.start()
 
     def stop_simulation(self):
@@ -182,9 +196,11 @@ class CarlaControlPanel(ctk.CTk):
         self.dest_point_id = 0
         self.spawn_slider.set(0)
         self.dest_slider.set(0)
+        self.spawn_slider_update_value(0)
+        self.dest_slider_update_value(0)
         self.set_label_right_status("Reset done")
 
-    def carla_thread(self, model_nn="dave2_const_v_b_CIL"):
+    def carla_thread(self, model_nn):
         self.actor_list = []
         try:
             self.setup_carla_world()
@@ -236,25 +252,24 @@ class CarlaControlPanel(ctk.CTk):
         loc_raw = self.all_spawn_points[int(self.spawn_point_id)].location
         self.start_location = carla.Location(loc_raw)
         loc = carla.Location(loc_raw)
-        loc.z += 1
-        self.world.debug.draw_string(loc, 'Spawn point', color=carla.Color(r=255, g=0, b=0), life_time=0.1)
+        loc.z += 0.1
+        self.world.debug.draw_string(loc, 'o', color=carla.Color(r=255, g=0, b=0),life_time=0.1)
 
     def draw_dest_point(self):
         loc_raw = self.all_spawn_points[int(self.dest_point_id)].location
         self.destination = carla.Location(loc_raw)
         loc = carla.Location(loc_raw)
-        loc.z += 1
-        self.world.debug.draw_string(loc, 'Destination', color=carla.Color(r=255, g=0, b=0), life_time=0.1)
+        loc.z += 0.1
+        self.world.debug.draw_string(loc, 'o', color=carla.Color(r=0, g=255, b=0),life_time=0.1)
 
     def car_drive(self, model_nn):
         if self.first_frame:
             self.setup_first_frame(model_nn)
             self.set_label_right_status("Done")
 
-        if model_nn == "dave2_const_v_b":
+        if model_nn == "dave2_const_v_b" or model_nn == "dave2_const_v_b_CIL":
             self.execute_dave2_const_v_b()
-        elif model_nn == "dave2_const_v_b_CIL":
-            self.execute_dave2_const_v_b_CIL()
+
 
     def setup_first_frame(self, model_nn):
         self.first_frame = False
@@ -304,47 +319,7 @@ class CarlaControlPanel(ctk.CTk):
         self.center_sensor.listen(self.center_queue.put)
 
     def execute_dave2_const_v_b(self):
-        if self.center_queue is None:
-            return
-        try:
-            center_frame = self.center_queue.get(True, 2.0)
-        except queue.Empty:
-            return
-
-        self.agent._update_information()
-        self.draw_route()
-
-        if not self.car_go:
-            control = self.agent.run_step()
-            control.throttle = 0.0
-            control.brake = 1.0
-            self.vehicle.apply_control(control)
-            return
-
-        if self.agent.done():
-            print("DESTINATION REACHED")
-
-        image_center = raw_data_process(center_frame)
-        control = self.agent.run_step()
-        current_loc = self.vehicle.get_location()
-        command_int = self.agent._local_planner.target_road_option
-
-        steer = process_frame(image_center, command_int, self.transform, self.model, self.device)
-
-        if command_int == 4:
-            self.agent.set_destination(self.destination, start_location=current_loc)
-        else:
-            self.frame_number += 1
-            if self.frame_number > 400 and abs(steer) < 0.05:
-                self.frame_number = 0
-                self.agent.set_destination(self.destination, start_location=current_loc)
-
-        control.steer = float(np.clip(steer, -1.0, 1.0))
-        control.throttle = 0.15
-        control.brake = 0.0
-        self.vehicle.apply_control(control)
-
-    def execute_dave2_const_v_b_CIL(self):
+        #Same for const_v_b and const_v_b_CIL
         if self.center_queue is None:
             return
         try:
@@ -362,9 +337,6 @@ class CarlaControlPanel(ctk.CTk):
             self.vehicle.apply_control(control)
             return
 
-        if self.agent.done():
-            print("DESTINATION REACHED")
-
         image_center = raw_data_process(center_frame)
         control = self.agent.run_step()
         current_loc = self.vehicle.get_location()
@@ -381,7 +353,6 @@ class CarlaControlPanel(ctk.CTk):
                 self.agent.set_destination(self.destination, start_location=current_loc)
 
         control.steer = float(np.clip(steer, -1.0, 1.0))
-
         control.throttle = 0.15
         control.brake = 0.0
         self.vehicle.apply_control(control)
@@ -393,12 +364,16 @@ class CarlaControlPanel(ctk.CTk):
 
     def draw_route(self):
         route_queue = self.agent._local_planner._waypoints_queue
-        if len(route_queue) > 0:
+        if len(route_queue) > 2:
             for i, (waypoint, _) in enumerate(route_queue):
                 if i > len(route_queue) - 1: break
                 loc = waypoint.transform.location
                 loc.z += 0.05
                 self.world.debug.draw_string(loc, 'o', draw_shadow=False, color=carla.Color(r=0, g=255, b=0),life_time=0.1)
+        else:
+            #If destination is reached
+            self.car_go = False
+            self.set_label_right_status("Destination reached")
 
 
 if __name__ == "__main__":
