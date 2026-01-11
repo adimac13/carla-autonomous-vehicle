@@ -12,6 +12,7 @@ from src.data.collect_data_dave2_const_v_b import IMAGE_WIDTH, IMAGE_HEIGHT, FOV
 from src.driving.load_model_dave2_const_v_b_to_carla import process_frame
 from agents.navigation.behavior_agent import BehaviorAgent
 import numpy as np
+import math
 
 TOTAL_SPAWN_POINTS = 100
 SLIDER_WIDTH = 700
@@ -33,7 +34,7 @@ class CarlaControlPanel(ctk.CTk):
         self.geometry("800x700")
         self.title("Carla control panel")
 
-        self.grid_rowconfigure((0, 1, 2, 3, 4, 5), weight=1)
+        self.grid_rowconfigure((0, 1, 2, 3, 4, 5, 6), weight=1)
         self.grid_columnconfigure((0, 1), weight=1)
 
         #Label for title
@@ -77,7 +78,7 @@ class CarlaControlPanel(ctk.CTk):
         self.label_left_column = ctk.CTkLabel(self.frame_left, text="Environment", font=(font_name, 15, "bold"))
         self.label_left_column.pack(pady=10)
 
-        self.button_sim_on = ctk.CTkButton(self.frame_left, text="Set up environment", fg_color="blue", command=self.start_simulation,
+        self.button_sim_on = ctk.CTkButton(self.frame_left, text="Set up", fg_color="blue", command=self.start_simulation,
                                            font=(font_name, 15, "bold"))
         self.button_sim_on.pack(pady=10)
 
@@ -272,7 +273,7 @@ class CarlaControlPanel(ctk.CTk):
             self.setup_dave2_sensor()
             log_path = Path("../../logs")
             agent_path = Path("agent_dave2_const_v_b_CIL")
-            version = 0
+            version = 3
             checkpoint_path = log_path / agent_path / Path(f"version_{str(version)}/checkpoints")
             model_path = next(checkpoint_path.glob("*ckpt"))
             self.model = dave2_const_v_b_CIL_model.load_from_checkpoint(model_path, train_flag=False, version=version)
@@ -326,7 +327,7 @@ class CarlaControlPanel(ctk.CTk):
         image_center = raw_data_process(center_frame)
         control = self.agent.run_step()
         current_loc = self.vehicle.get_location()
-        command_int = self.agent._local_planner.targetf_road_option
+        command_int = self.agent._local_planner.target_road_option
 
         steer = process_frame(image_center, command_int, self.transform, self.model, self.device)
 
@@ -355,7 +356,7 @@ class CarlaControlPanel(ctk.CTk):
         self.draw_route()
 
         if not self.car_go:
-            control = self.agent.run_step()
+            control = carla.VehicleControl()
             control.throttle = 0.0
             control.brake = 1.0
             self.vehicle.apply_control(control)
@@ -380,9 +381,15 @@ class CarlaControlPanel(ctk.CTk):
                 self.agent.set_destination(self.destination, start_location=current_loc)
 
         control.steer = float(np.clip(steer, -1.0, 1.0))
+
         control.throttle = 0.15
         control.brake = 0.0
         self.vehicle.apply_control(control)
+
+        # velocity = self.vehicle.get_velocity()
+        # speed = 3.6 * math.sqrt(velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2)
+        # print(speed, steer)
+
 
     def draw_route(self):
         route_queue = self.agent._local_planner._waypoints_queue
@@ -390,7 +397,7 @@ class CarlaControlPanel(ctk.CTk):
             for i, (waypoint, _) in enumerate(route_queue):
                 if i > len(route_queue) - 1: break
                 loc = waypoint.transform.location
-                loc.z += 0.2
+                loc.z += 0.05
                 self.world.debug.draw_string(loc, 'o', draw_shadow=False, color=carla.Color(r=0, g=255, b=0),life_time=0.1)
 
 

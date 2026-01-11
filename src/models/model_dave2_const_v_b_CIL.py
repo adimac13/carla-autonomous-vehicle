@@ -152,5 +152,5 @@ if __name__ == "__main__":
     checkpoint = ModelCheckpoint(monitor = 'val_mae', save_top_k=1, mode = 'min')
 
     logger=TensorBoardLogger("../../logs", name="agent_dave2_const_v_b_CIL")
-    trainer=pl.Trainer(logger=logger, max_epochs=30, log_every_n_steps=1, accelerator="gpu", callbacks = [early_stop_callback, checkpoint])
+    trainer=pl.Trainer(logger=logger, max_epochs=50, log_every_n_steps=1, accelerator="gpu", callbacks = [early_stop_callback, checkpoint])
     trainer.fit(driving_model, ddm)

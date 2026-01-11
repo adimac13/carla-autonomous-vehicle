@@ -20,13 +20,13 @@ OUTPUT_CSV = '../../labels/dave2_const_v_s/final_annotations.csv'
 # 3     8673
 # 4    12000
 
-NEAR_ZERO_RANGE = 0.15
-MAX_SAMPLES_STEER_NEAR_0 = 2500
-MAX_SAMPLES_STEER_OTHER = 2000
+NEAR_ZERO_RANGE = 0.11
+MAX_SAMPLES_STEER_NEAR_0 = 1800
+MAX_SAMPLES_STEER_OTHER = 3000
 
 MAX_SAMPLES_COMMAND12 = 7000
-MAX_SAMPLES_COMMAND3 = 7000
-MAX_SAMPLES_COMMAND4 = 10000
+MAX_SAMPLES_COMMAND3 = 9000
+MAX_SAMPLES_COMMAND4 = 20000
 
 #New method concentrates on reducing data where steer in range [0,0.1] while following a lane
 #The rest of the data is only limited by the value of MAX_SAMPLES_COMMANDx
@@ -49,7 +49,7 @@ def balance_dataset_method_2():
     if len(subset_command_4) > MAX_SAMPLES_COMMAND4:
         bins = np.arange(-1.0, 1.01, 0.05)
         subset_command_4 ['range'] = pd.cut(subset_command_4['steer'], bins = bins)
-        # print(subset_command_4['range'].value_counts().sort_index())
+        print(subset_command_4['range'].value_counts().sort_index())
         balanced_4_stage_1 = []
         for range_id in subset_command_4['range'].unique():
             subset = subset_command_4[subset_command_4['range'] == range_id]
