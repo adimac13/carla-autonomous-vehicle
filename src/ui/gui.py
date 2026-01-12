@@ -12,6 +12,8 @@ from src.driving.load_model_dave2_const_v_b_to_carla import process_frame
 from agents.navigation.behavior_agent import BehaviorAgent
 import numpy as np
 import math
+import cv2
+from PIL import Image
 
 TOTAL_SPAWN_POINTS = 100
 SLIDER_WIDTH = 700
@@ -47,6 +49,23 @@ class PID_controller:
 
         return throttle, brake
 
+class ViewFromCar(ctk.CTkToplevel):
+    #TODO Add that the window only pops when a car exists
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.geometry("640x400")
+        self.label = ctk.CTkLabel(self, text = "View from a car")
+        self.label.pack(pady = 20)
+        self.image_label = ctk.CTkLabel(self,text="")
+        self.image_label.pack(expand = True, fill = "both", padx = 10, pady = 10)
+
+    def update_frame(self, camera_image):
+        camera_image = cv2.cvtColor(camera_image, cv2.COLOR_BGR2RGB)
+        pil_image = Image.fromarray(camera_image)
+        self.ctk_image = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(300,200))
+        self.image_label.configure(image=self.ctk_image)
+
+
 class CarlaControlPanel(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -60,6 +79,7 @@ class CarlaControlPanel(ctk.CTk):
         self.nn_car = False             #Activates neural network driving model
         self.car_go = False             #Controls vehicle movement
         self.reset_flag = False         #Indicates whether to reset
+        self.view_window = False        #Indicates whether top level windows exists
 
         self.geometry("800x700")
         self.title("Carla control panel")
@@ -119,7 +139,6 @@ class CarlaControlPanel(ctk.CTk):
         self.label_left_status = ctk.CTkLabel(self.frame_left, text="", font=(font_name, 15, "bold"))
         self.label_left_status.pack(pady=10)
 
-
         #Buttons on right for car
         self.label_right_column = ctk.CTkLabel(self.frame_right, text="Car", font=(font_name, 15, "bold"))
         self.label_right_column.pack(pady=10)
@@ -140,6 +159,10 @@ class CarlaControlPanel(ctk.CTk):
                                          , font=(font_name, 15, "bold"))
         self.button_delete.pack(pady=10)
 
+        self.button_view = ctk.CTkButton(self.frame_right, text="View", fg_color="orange", command = self.view_from_car
+                                         , font=(font_name, 15, "bold"))
+        self.button_view.pack(pady=10)
+
         self.label_right_status = ctk.CTkLabel(self.frame_right, text="", font=(font_name, 15, "bold"))
         self.label_right_status.pack(pady=10)
 
@@ -156,6 +179,25 @@ class CarlaControlPanel(ctk.CTk):
         self.combo_box.grid(row=7,column = 0, sticky = "n")
         self.combo_box.set("dave2_const_v_b_CIL")
 
+        self.toplevel_window = None
+
+    def view_from_car(self):
+        if not self.nn_car:
+            return
+
+        if self.toplevel_window is None or not self.toplevel_window.winfo_exists():
+            self.toplevel_window = ViewFromCar(self)
+            self.view_window = True
+
+            #Closing function
+            def on_close():
+                self.view_window = False
+                self.toplevel_window.destroy()
+                self.toplevel_window = None
+
+            self.toplevel_window.protocol("WM_DELETE_WINDOW", on_close)
+        else:
+            self.toplevel_window.focus()
 
     def set_label_left_status(self, status):
         self.label_left_status.configure(text=status)
@@ -191,6 +233,8 @@ class CarlaControlPanel(ctk.CTk):
         self.set_label_left_status("In progress...")
 
     def spawn_car_on_road(self):
+        if not self.carla_running:
+            return
         self.spawn_point_draw = False
         self.dest_point_draw = False
         self.nn_car = True
@@ -198,10 +242,14 @@ class CarlaControlPanel(ctk.CTk):
         self.set_label_right_status("Spawning a car...")
 
     def start_car(self):
+        if not self.nn_car:
+            return
         self.car_go = True
         self.set_label_right_status("Driving")
 
     def stop_car(self):
+        if not self.nn_car:
+            return
         self.car_go = False
         self.set_label_right_status("Stopped")
 
@@ -361,6 +409,10 @@ class CarlaControlPanel(ctk.CTk):
         self.agent._update_information()
         self.draw_route()
 
+        image_center = raw_data_process(center_frame)
+        if self.view_window:
+            self.toplevel_window.update_frame(image_center)
+
         if not self.car_go:
             control = carla.VehicleControl()
             control.throttle = 0.0
@@ -368,7 +420,6 @@ class CarlaControlPanel(ctk.CTk):
             self.vehicle.apply_control(control)
             return
 
-        image_center = raw_data_process(center_frame)
         control = self.agent.run_step()
         current_loc = self.vehicle.get_location()
         command_int = self.agent._local_planner.target_road_option
@@ -398,7 +449,7 @@ class CarlaControlPanel(ctk.CTk):
 
         control.throttle = throttle_pid
         control.brake = brake_pid
-        print(speed)
+        # print(speed)
 
         self.vehicle.apply_control(control)
 
