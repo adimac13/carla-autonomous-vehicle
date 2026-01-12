@@ -88,6 +88,21 @@ class ViewFromCar(ctk.CTkToplevel):
                                               font=(font_name, 15, "bold"))
         self.button_manual.grid(row = 3, column = 2, columnspan = 2, sticky = "n")
 
+        #Manual control config
+        self.wsad = {'w': False, 's': False, 'a': False, 'd': False}
+        self.bind("<KeyPress>", self.key_pressed)
+        self.bind("<KeyRelease>", self.key_released)
+
+    def key_pressed(self, event):
+        key = event.char.lower()
+        if key in self.wsad:
+            self.wsad[key] = True
+
+    def key_released(self, event):
+        key = event.char.lower()
+        if key in self.wsad:
+            self.wsad[key] = False
+
     def update_frame(self, camera_image):
         camera_image = cv2.cvtColor(camera_image, cv2.COLOR_BGR2RGB)
         pil_image = Image.fromarray(camera_image)
@@ -101,10 +116,17 @@ class ViewFromCar(ctk.CTkToplevel):
         self.steer_label.configure(text=str(f"Steer: {steer: 5.2f}"))
 
     def autopilot(self):
-        return
+        self.parent.autopilot_on = True
+        self.parent.pid_controller.prev_error = 0.0
+        self.parent.pid_controller.integral = 0.0
+
+        #Calculating new navigation when turning on autopilot
+        if self.parent.nn_car and hasattr(self.parent, 'agent') and hasattr(self.parent, 'vehicle'):
+            current_loc = self.parent.vehicle.get_location()
+            self.parent.agent.set_destination(self.parent.destination, start_location=current_loc)
 
     def manual(self):
-        return
+        self.parent.autopilot_on = False
 
 class CarlaControlPanel(ctk.CTk):
     def __init__(self):
@@ -120,6 +142,7 @@ class CarlaControlPanel(ctk.CTk):
         self.car_go = False             #Controls vehicle movement
         self.reset_flag = False         #Indicates whether to reset
         self.view_window = False        #Indicates whether top level windows exists
+        self.autopilot_on = True        #Activates autopilot
 
         #Values for panel info
         self.speed = 0.0
@@ -127,7 +150,7 @@ class CarlaControlPanel(ctk.CTk):
         self.brake_pid = 0.0
         self.steer = 0.0
 
-        self.geometry("800x700")
+        self.geometry("450x550")
         self.title("Carla control panel")
 
         self.grid_rowconfigure((0, 1, 2, 3, 4, 5, 6, 7), weight=1)
@@ -342,13 +365,16 @@ class CarlaControlPanel(ctk.CTk):
             while self.carla_running:
                 self.world.tick()
                 if not self.reset_flag:
-                    if self.nn_car:
-                        self.car_drive(model_nn)
-                    else:
-                        if self.spawn_point_draw:
-                            self.draw_spawn_point()
-                        if self.dest_point_draw:
-                            self.draw_dest_point()
+                    if self.autopilot_on:
+                        if self.nn_car:
+                            self.car_drive(model_nn)
+                    elif not self.autopilot_on:
+                        self.car_drive_manual()
+
+                    if self.spawn_point_draw:
+                        self.draw_spawn_point()
+                    if self.dest_point_draw:
+                        self.draw_dest_point()
                 else:
                     self.reset_handle()
                     self.reset_flag = False
@@ -507,6 +533,54 @@ class CarlaControlPanel(ctk.CTk):
         control.brake = self.brake_pid
         # print(speed)
 
+        self.vehicle.apply_control(control)
+
+    def car_drive_manual(self):
+        if self.center_queue is None:
+            return
+        try:
+            center_frame = self.center_queue.get(True, 2.0)
+        except queue.Empty:
+            return
+
+        self.agent._update_information()
+
+        image_center = raw_data_process(center_frame)
+        if self.view_window:
+            self.current_frame = image_center
+
+        if not self.car_go:
+            control = carla.VehicleControl()
+            control.throttle = 0.0
+            control.brake = 1.0
+            self.vehicle.apply_control(control)
+            return
+
+        control = self.agent.run_step()
+
+        if self.toplevel_window.wsad['w']:
+            self.throttle_pid = 0.2
+        else:
+            self.throttle_pid = 0.0
+
+        if self.toplevel_window.wsad['a']:
+            self.steer = -0.2
+        elif self.toplevel_window.wsad['d']:
+            self.steer = 0.2
+        else:
+            self.steer = 0.0
+
+        if self.toplevel_window.wsad['s']:
+            self.brake_pid = 0.5
+        else:
+            self.brake_pid = 0.0
+
+
+        v = self.vehicle.get_velocity()
+        self.speed = 3.6 * math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
+        control.steer = self.steer
+        control.throttle = self.throttle_pid
+        control.brake = self.brake_pid
         self.vehicle.apply_control(control)
 
     def draw_route(self):
