@@ -4,7 +4,6 @@ import threading
 import queue
 from pathlib import Path
 import torch
-from h5py.h5ds import set_label
 from torchvision import transforms
 from src.models.model_dave2_const_v_b import DrivingModel as dave2_const_v_b_model
 from src.models.model_dave2_const_v_b_CIL import DrivingModel as dave2_const_v_b_CIL_model
@@ -16,6 +15,37 @@ import math
 
 TOTAL_SPAWN_POINTS = 100
 SLIDER_WIDTH = 700
+
+class PID_controller:
+    def __init__(self, Kp = 0.1, Ki = 0.05, Kd = 0.1):
+        self.Kp = Kp
+        self.Ki = Ki
+        self.Kd = Kd
+        self.prev_error = 0.0
+        self.integral = 0.0
+
+    def run_step(self, target_speed, current_speed):
+        error = target_speed - current_speed
+        P = error * self.Kp
+
+        self.integral += error
+        #Anti wind-up
+        self.integral = max(min(self.integral, 10), -10)
+        I = self.integral * self.Ki
+
+        D = self.Kd * (error - self.prev_error)
+        self.prev_error = error
+
+        signal = P + I + D
+
+        if signal > 0:
+            throttle = np.clip(signal, 0.0, 1.0)
+            brake = 0.0
+        else:
+            throttle = 0.0
+            brake = np.clip((-0.1) * signal, 0.0, 1.0)
+
+        return throttle, brake
 
 class CarlaControlPanel(ctk.CTk):
     def __init__(self):
@@ -275,6 +305,7 @@ class CarlaControlPanel(ctk.CTk):
         self.first_frame = False
         self.vehicle = self.world.spawn_actor(self.model_3, self.all_spawn_points[int(self.spawn_point_id)])
         self.actor_list.append(self.vehicle)
+        self.pid_controller = PID_controller()
 
         if model_nn == "dave2_const_v_b":
             self.setup_dave2_sensor()
@@ -353,14 +384,23 @@ class CarlaControlPanel(ctk.CTk):
                 self.agent.set_destination(self.destination, start_location=current_loc)
 
         control.steer = float(np.clip(steer, -1.0, 1.0))
-        control.throttle = 0.15
-        control.brake = 0.0
+
+        #Calculating throttle and brake using PID
+        v = self.vehicle.get_velocity()
+        speed = 3.6 * math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
+
+        if abs(steer) < 0.15:
+            #When a car is driving straight
+            throttle_pid, brake_pid = self.pid_controller.run_step(target_speed = 10.0, current_speed= speed)
+        else:
+            #When a car is turning
+            throttle_pid, brake_pid = self.pid_controller.run_step(target_speed=7.0, current_speed=speed)
+
+        control.throttle = throttle_pid
+        control.brake = brake_pid
+        print(speed)
+
         self.vehicle.apply_control(control)
-
-        # velocity = self.vehicle.get_velocity()
-        # speed = 3.6 * math.sqrt(velocity.x ** 2 + velocity.y ** 2 + velocity.z ** 2)
-        # print(speed, steer)
-
 
     def draw_route(self):
         route_queue = self.agent._local_planner._waypoints_queue
