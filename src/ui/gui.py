@@ -50,21 +50,61 @@ class PID_controller:
         return throttle, brake
 
 class ViewFromCar(ctk.CTkToplevel):
-    #TODO Add that the window only pops when a car exists
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.geometry("640x400")
-        self.label = ctk.CTkLabel(self, text = "View from a car")
-        self.label.pack(pady = 20)
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.parent = parent
+        font_name = "TimesNewRoman"
+        self.geometry("700x400")
+
+        self.grid_rowconfigure((0,2,3), weight=0)
+        self.grid_rowconfigure(1, weight=1)
+        self.grid_columnconfigure((0,1,2,3), weight = 1)
+
+        self.label = ctk.CTkLabel(self, text = "View from a car", font=(font_name, 20, "bold"))
+        self.label.grid(row = 0, column = 0, columnspan = 4, sticky = "n")
+
         self.image_label = ctk.CTkLabel(self,text="")
-        self.image_label.pack(expand = True, fill = "both", padx = 10, pady = 10)
+        self.image_label.grid(row = 1, column = 0, columnspan = 4, sticky = "nsew")
+
+        #Viewing basic info
+        self.speed_label = ctk.CTkLabel(self, text = "Speed: 0.0", font=(font_name, 20, "bold"))
+        self.speed_label.grid(row = 2, column = 0, sticky = "s")
+
+        self.throttle_label = ctk.CTkLabel(self, text = "Throttle: 0.0", font=(font_name, 20, "bold"))
+        self.throttle_label.grid(row = 2, column = 1, sticky = "s")
+
+        self.brake_label = ctk.CTkLabel(self, text = "Brake: 0.0", font=(font_name, 20, "bold"))
+        self.brake_label.grid(row = 2, column = 2, sticky = "s")
+
+        self.steer_label = ctk.CTkLabel(self, text = "Steer: 0.0", font=(font_name, 20, "bold"))
+        self.steer_label.grid(row = 2, column = 3, sticky = "s")
+
+        #Buttons to switch car mode
+        self.button_autopilot = ctk.CTkButton(self, text = "Autopilot", fg_color = "purple", command = self.autopilot,
+                                              font=(font_name, 15, "bold"))
+        self.button_autopilot.grid(row = 3, column = 0, columnspan = 2, sticky = "n")
+
+        self.button_manual = ctk.CTkButton(self, text = "Manual", fg_color = "purple", command = self.manual,
+                                              font=(font_name, 15, "bold"))
+        self.button_manual.grid(row = 3, column = 2, columnspan = 2, sticky = "n")
 
     def update_frame(self, camera_image):
         camera_image = cv2.cvtColor(camera_image, cv2.COLOR_BGR2RGB)
         pil_image = Image.fromarray(camera_image)
-        self.ctk_image = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(300,200))
+        self.ctk_image = ctk.CTkImage(light_image=pil_image, dark_image=pil_image, size=(600,400))
         self.image_label.configure(image=self.ctk_image)
 
+    def update_panel_info(self, speed, throttle, brake, steer):
+        self.speed_label.configure(text = str(f"Speed: {speed:5.1f}"))
+        self.throttle_label.configure(text=str(f"Throttle: {throttle:4.2f}"))
+        self.brake_label.configure(text=str(f"Brake: {brake:4.2f}"))
+        self.steer_label.configure(text=str(f"Steer: {steer: 5.2f}"))
+
+    def autopilot(self):
+        return
+
+    def manual(self):
+        return
 
 class CarlaControlPanel(ctk.CTk):
     def __init__(self):
@@ -80,6 +120,12 @@ class CarlaControlPanel(ctk.CTk):
         self.car_go = False             #Controls vehicle movement
         self.reset_flag = False         #Indicates whether to reset
         self.view_window = False        #Indicates whether top level windows exists
+
+        #Values for panel info
+        self.speed = 0.0
+        self.throttle_pid = 0.0
+        self.brake_pid = 0.0
+        self.steer = 0.0
 
         self.geometry("800x700")
         self.title("Carla control panel")
@@ -180,6 +226,15 @@ class CarlaControlPanel(ctk.CTk):
         self.combo_box.set("dave2_const_v_b_CIL")
 
         self.toplevel_window = None
+
+        self.current_frame = None
+        self.update_top_level_frame()
+
+    def update_top_level_frame(self):
+        if self.view_window and self.current_frame is not None and self.toplevel_window is not None:
+            self.toplevel_window.update_frame(self.current_frame)
+            self.toplevel_window.update_panel_info(self.speed, self.throttle_pid, self.brake_pid, self.steer)
+        self.after(30, self.update_top_level_frame)
 
     def view_from_car(self):
         if not self.nn_car:
@@ -411,7 +466,7 @@ class CarlaControlPanel(ctk.CTk):
 
         image_center = raw_data_process(center_frame)
         if self.view_window:
-            self.toplevel_window.update_frame(image_center)
+            self.current_frame = image_center
 
         if not self.car_go:
             control = carla.VehicleControl()
@@ -424,31 +479,32 @@ class CarlaControlPanel(ctk.CTk):
         current_loc = self.vehicle.get_location()
         command_int = self.agent._local_planner.target_road_option
 
-        steer = process_frame(image_center, command_int, self.transform, self.model, self.device)
+        self.steer = process_frame(image_center, command_int, self.transform, self.model, self.device)
 
         if command_int == 4:
             self.agent.set_destination(self.destination, start_location=current_loc)
         else:
             self.frame_number += 1
-            if self.frame_number > 400 and abs(steer) < 0.05:
+            if self.frame_number > 400 and abs(self.steer) < 0.05:
                 self.frame_number = 0
                 self.agent.set_destination(self.destination, start_location=current_loc)
 
-        control.steer = float(np.clip(steer, -1.0, 1.0))
+        self.steer = float(np.clip(self.steer, -1.0, 1.0))
+        control.steer = self.steer
 
         #Calculating throttle and brake using PID
         v = self.vehicle.get_velocity()
-        speed = 3.6 * math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
+        self.speed = 3.6 * math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
 
-        if abs(steer) < 0.15:
+        if abs(self.steer) < 0.15:
             #When a car is driving straight
-            throttle_pid, brake_pid = self.pid_controller.run_step(target_speed = 10.0, current_speed= speed)
+            self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed = 10.0, current_speed= self.speed)
         else:
             #When a car is turning
-            throttle_pid, brake_pid = self.pid_controller.run_step(target_speed=7.0, current_speed=speed)
+            self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed=7.0, current_speed=self.speed)
 
-        control.throttle = throttle_pid
-        control.brake = brake_pid
+        control.throttle = self.throttle_pid
+        control.brake = self.brake_pid
         # print(speed)
 
         self.vehicle.apply_control(control)
