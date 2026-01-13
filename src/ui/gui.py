@@ -523,6 +523,7 @@ class CarlaControlPanel(ctk.CTk):
         self.vehicle = self.world.spawn_actor(self.model_3, self.all_spawn_points[int(self.spawn_point_id)])
         self.actor_list.append(self.vehicle)
         self.pid_controller = PID_controller()
+        self.setup_lidar_sensor()
 
         if model_nn == "dave2_const_v_b":
             self.setup_dave2_sensor()
@@ -569,9 +570,9 @@ class CarlaControlPanel(ctk.CTk):
     def setup_lidar_sensor(self):
         lidar_bp = self.blueprint_library.find('sensor.lidar.ray_cast')
         lidar_bp.set_attribute('horizontal_fov', '60')
-        lidar_bp.set_attribute('range', '20')
-        lidar_bp.set_attribute('channels', '16')
-        lidar_bp.set_attribute('points_per_second', '20000')
+        lidar_bp.set_attribute('range', '50')
+        lidar_bp.set_attribute('channels', '32')
+        lidar_bp.set_attribute('points_per_second', '80000')
 
         #Located at the front of the car
         transform = carla.Transform(carla.Location(x=1.8, z=1.5))
@@ -581,8 +582,8 @@ class CarlaControlPanel(ctk.CTk):
 
     def process_lidar_data(self, point_cloud_data):
         min_dist = 0.2
-        max_dist = 10.0
-        vehicle_width = 1.0
+        max_dist = 30.0
+        vehicle_width = 1.3
         sensor_height = 1.2
 
         sum_dist = 0
@@ -601,13 +602,13 @@ class CarlaControlPanel(ctk.CTk):
             if dist > min_dist and dist < max_dist:
                 sum_dist += dist
                 num_el += 1
-        if num_el < 20:
+        if num_el < 10:
             self.obstacle_detect = False
             return
 
         mean_dist = sum_dist / num_el
 
-        if mean_dist < 5.0:
+        if mean_dist < 20.0:
             print(f"Obstacle!! {mean_dist}")
             self.obstacle_detect = True
             return
@@ -642,7 +643,9 @@ class CarlaControlPanel(ctk.CTk):
         current_loc = self.vehicle.get_location()
         command_int = self.agent._local_planner.target_road_option
 
-        self.steer = process_frame(image_center, command_int, self.transform, self.model, self.device)
+        #When obstacle is detected car changes the lane
+        self.steer = process_frame(image_center, command_int, self.transform, self.model, self.device, mirror = self.obstacle_detect)
+        if self.obstacle_detect: self.steer *= (-1)
 
         if command_int == 4:
             self.agent.set_destination(self.destination, start_location=current_loc)
@@ -659,7 +662,7 @@ class CarlaControlPanel(ctk.CTk):
         v = self.vehicle.get_velocity()
         self.speed = 3.6 * math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
 
-        if abs(self.steer) < 0.15:
+        if abs(self.steer) < 0.15 and not self.obstacle_detect:
             #When a car is driving straight
             self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed = 10.0, current_speed= self.speed)
         else:

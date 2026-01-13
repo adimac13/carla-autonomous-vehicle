@@ -20,8 +20,11 @@ from agents.navigation.local_planner import RoadOption
 from carla import ColorConverter as cc
 
 
-def process_frame(camera_image, command, transform, model, device):
+def process_frame(camera_image, command, transform, model, device, mirror = False):
     camera_image = cv2.cvtColor(camera_image, cv2.COLOR_BGR2YUV)
+
+    if mirror:
+        camera_image = cv2.flip(camera_image, 1)
     image_tensor = transform(camera_image)
     image_tensor = image_tensor.unsqueeze(0).to(device)
 
