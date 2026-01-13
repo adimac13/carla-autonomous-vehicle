@@ -14,6 +14,7 @@ import numpy as np
 import math
 import cv2
 from PIL import Image
+import random
 
 TOTAL_SPAWN_POINTS = 100
 SLIDER_WIDTH = 700
@@ -248,10 +249,90 @@ class CarlaControlPanel(ctk.CTk):
         self.combo_box.grid(row=7,column = 0, sticky = "n")
         self.combo_box.set("dave2_const_v_b_CIL")
 
-        self.toplevel_window = None
+        #Button for spawning obstacles
+        self.button_obstacles = ctk.CTkButton(self, text="Spawn obstacles", font=(font_name, 15, "bold"), fg_color="purple", command = self.spawn_obstacles)
+        self.button_obstacles.grid(row = 7, column = 1, sticky = "n")
 
+        self.toplevel_window = None
         self.current_frame = None
         self.update_top_level_frame()
+
+    def is_road_straight(self, transform, distance = 20.0, tolerance = 5.0):
+
+        waypoint = self.world.get_map().get_waypoint(transform.location)
+        prev_waypoints = waypoint.previous(distance)
+        next_waypoints = waypoint.next(distance)
+
+        if not next_waypoints or not prev_waypoints:
+            return False
+
+        prev_waypoint = prev_waypoints[0]
+        next_waypoint = next_waypoints[0]
+
+        yaw_1_previous = waypoint.transform.rotation.yaw
+        yaw_2_previous = prev_waypoint.transform.rotation.yaw
+        diff_previous = abs(yaw_1_previous - yaw_2_previous)
+        diff_previous = diff_previous % 360
+        if diff_previous > 180:
+            diff_previous = 360 - diff_previous
+
+        yaw_1_next = waypoint.transform.rotation.yaw
+        yaw_2_next = next_waypoint.transform.rotation.yaw
+        diff_next = abs(yaw_1_next - yaw_2_next)
+        diff_next = diff_next % 360
+        if diff_next > 180:
+            diff_next = 360 - diff_next
+
+        #If diff is smaller than the tolerance True is returned
+        return diff_next < tolerance and diff_previous < tolerance
+
+    def spawn_obstacles(self, max_obstacles = 10):
+        """
+        Spawns obstacles only on straight roads; minimum distance between each obstacle is 10.0 m
+        """
+        if not self.carla_running or self.spawn_car:
+            return
+        possible_obstacles = []
+
+        for spawnpoint in self.all_spawn_points:
+            if self.is_road_straight(spawnpoint):
+
+                possible_obstacles.append(spawnpoint)
+
+
+        # self.obstacles_list = np.random.choice(np.arange(0, len(possible_obstacles),1), 10, replace=False)
+        obstacles_num = 0
+        self.obstacles_list = []
+
+        while obstacles_num < max_obstacles:
+            idx = random.randint(0,len(possible_obstacles) - 1)
+
+            if idx in self.obstacles_list: continue
+
+            flag_dist = False
+            for obstacle_idx in self.obstacles_list:
+                if possible_obstacles[idx].location.distance(possible_obstacles[obstacle_idx].location) < 30.0:
+                    flag_dist = True
+                    continue
+
+            if flag_dist: continue
+
+            self.obstacles_list.append(idx)
+            obstacles_num += 1
+
+
+        for actor in self.actor_list:
+            if actor.is_alive:
+                actor.destroy()
+
+        for index in self.obstacles_list:
+            transform = possible_obstacles[index]
+            obstacle = random.choice(self.blueprint_library.filter('vehicle.*'))
+            actor = self.world.try_spawn_actor(obstacle, transform)
+
+            if actor is not None:
+                self.actor_list.append(actor)
+
 
     def update_top_level_frame(self):
         if self.view_window and self.current_frame is not None and self.toplevel_window is not None:
@@ -311,7 +392,7 @@ class CarlaControlPanel(ctk.CTk):
         self.set_label_left_status("In progress...")
 
     def spawn_car_on_road(self):
-        if not self.carla_running:
+        if not self.carla_running or self.nn_car:
             return
         self.spawn_point_draw = False
         self.dest_point_draw = False
