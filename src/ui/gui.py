@@ -144,6 +144,7 @@ class CarlaControlPanel(ctk.CTk):
         self.reset_flag = False         #Indicates whether to reset
         self.view_window = False        #Indicates whether top level windows exists
         self.autopilot_on = True        #Activates autopilot
+        self.obstacle_detect = False    #Checks whether there is an obstacle in front of a car
 
         #Values for panel info
         self.speed = 0.0
@@ -258,6 +259,9 @@ class CarlaControlPanel(ctk.CTk):
         self.update_top_level_frame()
 
     def is_road_straight(self, transform, distance = 20.0, tolerance = 5.0):
+        """
+        Checks if the road is straight
+        """
 
         waypoint = self.world.get_map().get_waypoint(transform.location)
         prev_waypoints = waypoint.previous(distance)
@@ -335,6 +339,9 @@ class CarlaControlPanel(ctk.CTk):
 
 
     def update_top_level_frame(self):
+        """
+        Updates view from a car
+        """
         if self.view_window and self.current_frame is not None and self.toplevel_window is not None:
             self.toplevel_window.update_frame(self.current_frame)
             self.toplevel_window.update_panel_info(self.speed, self.throttle_pid, self.brake_pid, self.steer)
@@ -558,6 +565,55 @@ class CarlaControlPanel(ctk.CTk):
         self.actor_list.append(self.center_sensor)
         self.center_queue = queue.Queue()
         self.center_sensor.listen(self.center_queue.put)
+
+    def setup_lidar_sensor(self):
+        lidar_bp = self.blueprint_library.find('sensor.lidar.ray_cast')
+        lidar_bp.set_attribute('horizontal_fov', '60')
+        lidar_bp.set_attribute('range', '20')
+        lidar_bp.set_attribute('channels', '16')
+        lidar_bp.set_attribute('points_per_second', '20000')
+
+        #Located at the front of the car
+        transform = carla.Transform(carla.Location(x=1.8, z=1.5))
+        self.lidar_sensor = self.world.spawn_actor(lidar_bp, transform, attach_to=self.vehicle)
+        self.actor_list.append(self.lidar_sensor)
+        self.lidar_sensor.listen(lambda point_cloud: self.process_lidar_data(point_cloud))
+
+    def process_lidar_data(self, point_cloud_data):
+        min_dist = 0.2
+        max_dist = 10.0
+        vehicle_width = 1.0
+        sensor_height = 1.2
+
+        sum_dist = 0
+        num_el = 0
+        for detection in point_cloud_data:
+            x = detection.point.x
+            y = detection.point.y
+            z = detection.point.z
+
+            if x <= 0: continue
+            if abs(y) > vehicle_width: continue
+            if z < -sensor_height: continue
+            if z > 1.0: continue
+            dist = math.sqrt(x ** 2 + y ** 2 + z ** 2)
+
+            if dist > min_dist and dist < max_dist:
+                sum_dist += dist
+                num_el += 1
+        if num_el < 20:
+            self.obstacle_detect = False
+            return
+
+        mean_dist = sum_dist / num_el
+
+        if mean_dist < 5.0:
+            print(f"Obstacle!! {mean_dist}")
+            self.obstacle_detect = True
+            return
+
+        self.obstacle_detect = False
+        return
 
     def execute_dave2_const_v_b(self):
         #Same for const_v_b and const_v_b_CIL
