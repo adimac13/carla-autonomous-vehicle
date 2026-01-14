@@ -637,6 +637,10 @@ class CarlaControlPanel(ctk.CTk):
             self.obstacle_current = False
             return
 
+        #When car is avoiding obstacles it doesn't detect other obstacles
+        if self.prev_obstacle_state and self.frames_with_obstacle_detected > 0:
+            current_frame_obstacle = False
+
         if current_frame_obstacle:
             self.obstacle_detect = True
             self.obstacle_current = True
@@ -723,9 +727,12 @@ class CarlaControlPanel(ctk.CTk):
         elif not self.obstacle_detect:
             # When a car is turning
             target_speed = 7.0
-        else:
-            # When an obstacle is detected
+        elif self.obstacle_current:
+            # When an obstacle is detected in front of car
             target_speed = 2.0
+        else:
+            # When car is driving on the left lane, while avoiding obstacle
+            target_speed = 4.0
 
         self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed=target_speed,
                                                                          current_speed=self.speed)
