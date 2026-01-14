@@ -90,7 +90,7 @@ class ViewFromCar(ctk.CTkToplevel):
         self.button_manual.grid(row = 3, column = 2, columnspan = 2, sticky = "n")
 
         #Manual control config
-        self.wsad = {'w': False, 's': False, 'a': False, 'd': False}
+        self.wsad = {'w': False, 's': False, 'a': False, 'd': False, 'q':False}
         self.bind("<KeyPress>", self.key_pressed)
         self.bind("<KeyRelease>", self.key_released)
 
@@ -145,6 +145,8 @@ class CarlaControlPanel(ctk.CTk):
         self.view_window = False        #Indicates whether top level windows exists
         self.autopilot_on = True        #Activates autopilot
         self.obstacle_detect = False    #Checks whether there is an obstacle in front of a car
+        self.reverse_gear = False       #Toggle reverse
+        self.prev_q_state = False       #States whether one frame before "q" was pressed
 
         #Values for panel info
         self.speed = 0.0
@@ -436,6 +438,7 @@ class CarlaControlPanel(ctk.CTk):
         self.first_frame = True
         self.spawn_point_draw = True
         self.dest_point_draw = True
+        self.autopilot_on = True
         self.spawn_point_id = 0
         self.dest_point_id = 0
         self.spawn_slider.set(0)
@@ -569,10 +572,13 @@ class CarlaControlPanel(ctk.CTk):
 
     def setup_lidar_sensor(self):
         lidar_bp = self.blueprint_library.find('sensor.lidar.ray_cast')
-        lidar_bp.set_attribute('horizontal_fov', '60')
+        lidar_bp.set_attribute('rotation_frequency', '20')
+        lidar_bp.set_attribute('horizontal_fov', '50')
         lidar_bp.set_attribute('range', '50')
         lidar_bp.set_attribute('channels', '32')
         lidar_bp.set_attribute('points_per_second', '80000')
+        lidar_bp.set_attribute('dropoff_general_rate', '0.05')
+        lidar_bp.set_attribute('dropoff_intensity_limit', '0.1')
 
         #Located at the front of the car
         transform = carla.Transform(carla.Location(x=1.8, z=1.5))
@@ -582,7 +588,7 @@ class CarlaControlPanel(ctk.CTk):
 
     def process_lidar_data(self, point_cloud_data):
         min_dist = 0.2
-        max_dist = 30.0
+        max_dist = 15.0
         vehicle_width = 1.3
         sensor_height = 1.2
 
@@ -602,13 +608,13 @@ class CarlaControlPanel(ctk.CTk):
             if dist > min_dist and dist < max_dist:
                 sum_dist += dist
                 num_el += 1
-        if num_el < 10:
+        if num_el < 300:
             self.obstacle_detect = False
             return
 
         mean_dist = sum_dist / num_el
 
-        if mean_dist < 20.0:
+        if mean_dist < 10.0:
             print(f"Obstacle!! {mean_dist}")
             self.obstacle_detect = True
             return
@@ -642,6 +648,7 @@ class CarlaControlPanel(ctk.CTk):
         control = self.agent.run_step()
         current_loc = self.vehicle.get_location()
         command_int = self.agent._local_planner.target_road_option
+        vehicle_roll = self.vehicle.get_transform().rotation.roll
 
         #When obstacle is detected car changes the lane
         self.steer = process_frame(image_center, command_int, self.transform, self.model, self.device, mirror = self.obstacle_detect)
@@ -656,6 +663,9 @@ class CarlaControlPanel(ctk.CTk):
                 self.agent.set_destination(self.destination, start_location=current_loc)
 
         self.steer = float(np.clip(self.steer, -1.0, 1.0))
+        #If car drives on a sidewalk
+        if vehicle_roll < -1.0:
+            self.steer = -0.2
         control.steer = self.steer
 
         #Calculating throttle and brake using PID
@@ -683,8 +693,6 @@ class CarlaControlPanel(ctk.CTk):
         except queue.Empty:
             return
 
-        self.agent._update_information()
-
         image_center = raw_data_process(center_frame)
         if self.view_window:
             self.current_frame = image_center
@@ -696,10 +704,21 @@ class CarlaControlPanel(ctk.CTk):
             self.vehicle.apply_control(control)
             return
 
-        control = self.agent.run_step()
+        control = carla.VehicleControl()
+
+        #Gear changes only when the "q" is being pressed
+        current_q = self.toplevel_window.wsad['q']
+        if current_q and not self.prev_q_state:
+            self.reverse_gear = not self.reverse_gear
+        if self.reverse_gear:
+            control.reverse = True
 
         if self.toplevel_window.wsad['w']:
-            self.throttle_pid = 0.2
+            #When reverse gear, more throttle is required
+            if self.reverse_gear:
+                self.throttle_pid = 0.3
+            else:
+                self.throttle_pid = 0.2
         else:
             self.throttle_pid = 0.0
 
@@ -722,6 +741,7 @@ class CarlaControlPanel(ctk.CTk):
         control.throttle = self.throttle_pid
         control.brake = self.brake_pid
         self.vehicle.apply_control(control)
+        self.prev_q_state = current_q
 
     def draw_route(self):
         route_queue = self.agent._local_planner._waypoints_queue
