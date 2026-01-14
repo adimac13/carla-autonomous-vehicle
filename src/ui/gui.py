@@ -333,7 +333,7 @@ class CarlaControlPanel(ctk.CTk):
 
         for index in self.obstacles_list:
             transform = possible_obstacles[index]
-            obstacle = random.choice(self.blueprint_library.filter('vehicle.*'))
+            obstacle = random.choice(self.blueprint_library.filter('vehicle.mini.cooper_s_2021'))
             actor = self.world.try_spawn_actor(obstacle, transform)
 
             if actor is not None:
@@ -571,6 +571,9 @@ class CarlaControlPanel(ctk.CTk):
         self.center_sensor.listen(self.center_queue.put)
 
     def setup_lidar_sensor(self):
+        #Number of frames since last obstacle was detected
+        self.frames_with_obstacle_deteted = 0
+        self.prev_obstacle_state = False
         lidar_bp = self.blueprint_library.find('sensor.lidar.ray_cast')
         lidar_bp.set_attribute('rotation_frequency', '20')
         lidar_bp.set_attribute('horizontal_fov', '50')
@@ -587,10 +590,17 @@ class CarlaControlPanel(ctk.CTk):
         self.lidar_sensor.listen(lambda point_cloud: self.process_lidar_data(point_cloud))
 
     def process_lidar_data(self, point_cloud_data):
+        """
+        current_frame_obstacle states whether in current frame obstacle is detected
+        self.obstacle_detect states whether in the last 200 frames obstacle was detected
+        This ensures stable lane-changing maneuver and prevents too quick return to the original lane
+        """
         min_dist = 0.2
         max_dist = 15.0
         vehicle_width = 1.3
         sensor_height = 1.2
+        min_points_threshold = 300
+        max_frames = 100
 
         sum_dist = 0
         num_el = 0
@@ -608,18 +618,29 @@ class CarlaControlPanel(ctk.CTk):
             if dist > min_dist and dist < max_dist:
                 sum_dist += dist
                 num_el += 1
-        if num_el < 300:
-            self.obstacle_detect = False
-            return
+        current_frame_obstacle = False
 
-        mean_dist = sum_dist / num_el
+        if num_el >= min_points_threshold:
+            mean_dist = sum_dist / num_el
+            if mean_dist < 10.0:
+                current_frame_obstacle = True
 
-        if mean_dist < 10.0:
-            print(f"Obstacle!! {mean_dist}")
+        if current_frame_obstacle:
             self.obstacle_detect = True
-            return
+            print("Obstacle")
+            self.frames_with_obstacle_detected = 0
 
-        self.obstacle_detect = False
+        elif self.prev_obstacle_state:
+            self.frames_with_obstacle_detected += 1
+            if self.frames_with_obstacle_detected < max_frames:
+                self.obstacle_detect = True
+                print("Past obstacle")
+            else:
+                self.obstacle_detect = False
+                self.frames_with_obstacle_detected = 0
+        else:
+            self.obstacle_detect = False
+        self.prev_obstacle_state = self.obstacle_detect
         return
 
     def execute_dave2_const_v_b(self):
@@ -658,7 +679,7 @@ class CarlaControlPanel(ctk.CTk):
             self.agent.set_destination(self.destination, start_location=current_loc)
         else:
             self.frame_number += 1
-            if self.frame_number > 400 and abs(self.steer) < 0.05:
+            if self.frame_number > 200 and abs(self.steer) < 0.05:
                 self.frame_number = 0
                 self.agent.set_destination(self.destination, start_location=current_loc)
 
@@ -666,6 +687,8 @@ class CarlaControlPanel(ctk.CTk):
         #If car drives on a sidewalk
         if vehicle_roll < -1.0:
             self.steer = -0.2
+        elif vehicle_roll > 1.0:
+            self.steer = 0.2
         control.steer = self.steer
 
         #Calculating throttle and brake using PID
@@ -674,15 +697,18 @@ class CarlaControlPanel(ctk.CTk):
 
         if abs(self.steer) < 0.15 and not self.obstacle_detect:
             #When a car is driving straight
-            self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed = 10.0, current_speed= self.speed)
-        else:
+            target_speed = 10.0
+        elif not self.obstacle_detect:
             #When a car is turning
-            self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed=7.0, current_speed=self.speed)
+            target_speed = 7.0
+        else:
+            #When an obstacle is detected
+            target_speed = 5.0
+
+        self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed = target_speed, current_speed=self.speed)
 
         control.throttle = self.throttle_pid
         control.brake = self.brake_pid
-        # print(speed)
-
         self.vehicle.apply_control(control)
 
     def car_drive_manual(self):
