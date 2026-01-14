@@ -134,19 +134,20 @@ class CarlaControlPanel(ctk.CTk):
         super().__init__()
         font_name = "TimesNewRoman"
         #Flags
-        self.carla_running = False      #Controls the main simulation loop execution
-        self.spawn_point_draw = True    #Controls visualization of the spawn point
-        self.dest_point_draw = True     #Controls visualization of the destination point
-        # self.spawn_car = False          #Controls spawning a car
-        self.first_frame = True         #Flag for init in the first frame
-        self.nn_car = False             #Activates neural network driving model
-        self.car_go = False             #Controls vehicle movement
-        self.reset_flag = False         #Indicates whether to reset
-        self.view_window = False        #Indicates whether top level windows exists
-        self.autopilot_on = True        #Activates autopilot
-        self.obstacle_detect = False    #Checks whether there is an obstacle in front of a car
-        self.reverse_gear = False       #Toggle reverse
-        self.prev_q_state = False       #States whether one frame before "q" was pressed
+        self.carla_running = False          #Controls the main simulation loop execution
+        self.spawn_point_draw = True        #Controls visualization of the spawn point
+        self.dest_point_draw = True         #Controls visualization of the destination point
+        # self.spawn_car = False            #Controls spawning a car
+        self.first_frame = True             #Flag for init in the first frame
+        self.nn_car = False                 #Activates neural network driving model
+        self.car_go = False                 #Controls vehicle movement
+        self.reset_flag = False             #Indicates whether to reset
+        self.view_window = False            #Indicates whether top level windows exists
+        self.autopilot_on = True            #Activates autopilot
+        self.obstacle_detect = False        #Checks whether there is an obstacle in front of a car or in past 200 frames
+        self.reverse_gear = False           #Toggle reverse
+        self.prev_q_state = False           #States whether one frame before "q" was pressed
+        self.obstacle_current = False       #Flag is active only when it sees obstacle in current frame
 
         #Values for panel info
         self.speed = 0.0
@@ -422,8 +423,9 @@ class CarlaControlPanel(ctk.CTk):
         self.set_label_right_status("Stopped")
 
     def reset(self):
-        self.reset_flag = True
-        self.set_label_right_status("Reset in progress...")
+        if self.carla_running:
+            self.reset_flag = True
+            self.set_label_right_status("Reset in progress...")
 
     def reset_handle(self):
         for actor in self.actor_list:
@@ -528,6 +530,9 @@ class CarlaControlPanel(ctk.CTk):
         self.pid_controller = PID_controller()
         self.setup_lidar_sensor()
 
+        #It is only that lidar doesn't crash in the first frame
+        self.command_int = 4
+
         if model_nn == "dave2_const_v_b":
             self.setup_dave2_sensor()
             log_path = Path("../../logs")
@@ -599,8 +604,8 @@ class CarlaControlPanel(ctk.CTk):
         max_dist = 15.0
         vehicle_width = 1.3
         sensor_height = 1.2
-        min_points_threshold = 300
-        max_frames = 100
+        min_points_threshold = 450
+        max_frames = 200
 
         sum_dist = 0
         num_el = 0
@@ -625,8 +630,16 @@ class CarlaControlPanel(ctk.CTk):
             if mean_dist < 10.0:
                 current_frame_obstacle = True
 
+        #When car is on a crossroad it doesn't detect obstacles to avoid changing a lane
+        if self.command_int != 4:
+            self.obstacle_detect = False
+            self.prev_obstacle_state = False
+            self.obstacle_current = False
+            return
+
         if current_frame_obstacle:
             self.obstacle_detect = True
+            self.obstacle_current = True
             print("Obstacle")
             self.frames_with_obstacle_detected = 0
 
@@ -634,17 +647,20 @@ class CarlaControlPanel(ctk.CTk):
             self.frames_with_obstacle_detected += 1
             if self.frames_with_obstacle_detected < max_frames:
                 self.obstacle_detect = True
+                self.obstacle_current = False
                 print("Past obstacle")
             else:
+                self.obstacle_current = False
                 self.obstacle_detect = False
                 self.frames_with_obstacle_detected = 0
         else:
+            self.obstacle_current = False
             self.obstacle_detect = False
         self.prev_obstacle_state = self.obstacle_detect
         return
 
     def execute_dave2_const_v_b(self):
-        #Same for const_v_b and const_v_b_CIL
+        # Same for const_v_b and const_v_b_CIL
         if self.center_queue is None:
             return
         try:
@@ -668,14 +684,15 @@ class CarlaControlPanel(ctk.CTk):
 
         control = self.agent.run_step()
         current_loc = self.vehicle.get_location()
-        command_int = self.agent._local_planner.target_road_option
+        self.command_int = self.agent._local_planner.target_road_option
         vehicle_roll = self.vehicle.get_transform().rotation.roll
 
-        #When obstacle is detected car changes the lane
-        self.steer = process_frame(image_center, command_int, self.transform, self.model, self.device, mirror = self.obstacle_detect)
-        if self.obstacle_detect: self.steer *= (-1)
+        # When obstacle is detected car changes the lane
+        self.steer = process_frame(image_center, self.command_int, self.transform, self.model, self.device, mirror=self.obstacle_detect)
+        if self.obstacle_detect:
+            self.steer *= (-1)
 
-        if command_int == 4:
+        if self.command_int == 4:
             self.agent.set_destination(self.destination, start_location=current_loc)
         else:
             self.frame_number += 1
@@ -684,31 +701,38 @@ class CarlaControlPanel(ctk.CTk):
                 self.agent.set_destination(self.destination, start_location=current_loc)
 
         self.steer = float(np.clip(self.steer, -1.0, 1.0))
-        #If car drives on a sidewalk
+
+        # If car drives on a sidewalk
         if vehicle_roll < -1.0:
             self.steer = -0.2
         elif vehicle_roll > 1.0:
             self.steer = 0.2
+
+        if self.obstacle_current:
+            self.steer = -0.8
+
         control.steer = self.steer
 
-        #Calculating throttle and brake using PID
+        # Calculating throttle and brake using PID
         v = self.vehicle.get_velocity()
         self.speed = 3.6 * math.sqrt(v.x ** 2 + v.y ** 2 + v.z ** 2)
 
         if abs(self.steer) < 0.15 and not self.obstacle_detect:
-            #When a car is driving straight
+            # When a car is driving straight
             target_speed = 10.0
         elif not self.obstacle_detect:
-            #When a car is turning
+            # When a car is turning
             target_speed = 7.0
         else:
-            #When an obstacle is detected
-            target_speed = 5.0
+            # When an obstacle is detected
+            target_speed = 2.0
 
-        self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed = target_speed, current_speed=self.speed)
+        self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed=target_speed,
+                                                                         current_speed=self.speed)
 
         control.throttle = self.throttle_pid
         control.brake = self.brake_pid
+
         self.vehicle.apply_control(control)
 
     def car_drive_manual(self):
