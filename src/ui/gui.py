@@ -137,7 +137,7 @@ class CarlaControlPanel(ctk.CTk):
         self.carla_running = False      #Controls the main simulation loop execution
         self.spawn_point_draw = True    #Controls visualization of the spawn point
         self.dest_point_draw = True     #Controls visualization of the destination point
-        self.spawn_car = False          #Controls spawning a car
+        # self.spawn_car = False          #Controls spawning a car
         self.first_frame = True         #Flag for init in the first frame
         self.nn_car = False             #Activates neural network driving model
         self.car_go = False             #Controls vehicle movement
@@ -296,7 +296,7 @@ class CarlaControlPanel(ctk.CTk):
         """
         Spawns obstacles only on straight roads; minimum distance between each obstacle is 10.0 m
         """
-        if not self.carla_running or self.spawn_car:
+        if not self.carla_running or self.nn_car:
             return
         possible_obstacles = []
 
@@ -502,15 +502,15 @@ class CarlaControlPanel(ctk.CTk):
         loc_raw = self.all_spawn_points[int(self.spawn_point_id)].location
         self.start_location = carla.Location(loc_raw)
         loc = carla.Location(loc_raw)
-        loc.z += 0.1
-        self.world.debug.draw_string(loc, 'o', color=carla.Color(r=255, g=0, b=0),life_time=0.1)
+        loc.z += 0.05
+        self.world.debug.draw_string(loc, 'Here', color=carla.Color(r=255, g=0, b=0),life_time=0.1)
 
     def draw_dest_point(self):
         loc_raw = self.all_spawn_points[int(self.dest_point_id)].location
         self.destination = carla.Location(loc_raw)
         loc = carla.Location(loc_raw)
-        loc.z += 0.1
-        self.world.debug.draw_string(loc, 'o', color=carla.Color(r=0, g=255, b=0),life_time=0.1)
+        loc.z += 0.05
+        self.world.debug.draw_string(loc, 'Here', color=carla.Color(r=0, g=255, b=0),life_time=0.1)
 
     def car_drive(self, model_nn):
         if self.first_frame:
@@ -572,7 +572,7 @@ class CarlaControlPanel(ctk.CTk):
 
     def setup_lidar_sensor(self):
         #Number of frames since last obstacle was detected
-        self.frames_with_obstacle_deteted = 0
+        self.frames_with_obstacle_detected = 0
         self.prev_obstacle_state = False
         lidar_bp = self.blueprint_library.find('sensor.lidar.ray_cast')
         lidar_bp.set_attribute('rotation_frequency', '20')
@@ -712,7 +712,7 @@ class CarlaControlPanel(ctk.CTk):
         self.vehicle.apply_control(control)
 
     def car_drive_manual(self):
-        if self.center_queue is None:
+        if self.center_queue is None or self.toplevel_window is None:
             return
         try:
             center_frame = self.center_queue.get(True, 2.0)
