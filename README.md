@@ -129,7 +129,8 @@ The final model architecture combines NVIDIA's DAVE-2 with Conditional Imitation
 
 </div>
 ---
-## 💻 Installation
+
+## Installation
 
 ### Prerequisites
 
