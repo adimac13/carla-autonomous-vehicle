@@ -128,7 +128,6 @@ The final model architecture combines NVIDIA's DAVE-2 with Conditional Imitation
 | ![View from car](screenshots/view_from_car.png) |
 
 </div>
----
 
 ## Installation
 
