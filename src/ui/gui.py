@@ -737,6 +737,12 @@ class CarlaControlPanel(ctk.CTk):
         self.throttle_pid, self.brake_pid = self.pid_controller.run_step(target_speed=target_speed,
                                                                          current_speed=self.speed)
 
+        # If red light is deteceted => stop
+        traffic_light = self.vehicle.get_traffic_light()
+        if traffic_light and traffic_light.get_state() == carla.TrafficLightState.Red:
+            self.brake_pid = 1.0
+            self.throttle_pid = 0.0
+
         control.throttle = self.throttle_pid
         control.brake = self.brake_pid
 
